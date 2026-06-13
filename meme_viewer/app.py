@@ -177,15 +177,10 @@ class PreviewPanel(QScrollArea):
             self._label.setText("Failed to load image")
             return
         self._label.setObjectName("")
-        viewport = self.viewport()
-        if (
-            viewport is not None and
-            not viewport.isNull() and
-            viewport.width() > 0 and
-            viewport.height() > 0
-        ):
+        # Scale image to fit the scroll area's viewport, centered
+        if self.width() > 0 and self.height() > 0:
             scaled = pixmap.scaled(
-                viewport.size(),
+                self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
