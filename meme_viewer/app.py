@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(copy_action)
 
         trash_action = QAction("Trash", self)
-        trash_action.setShortcut(QKeySequence.StandardKey.Delete)
+        trash_action.setShortcuts([QKeySequence("Ctrl+D"), QKeySequence.StandardKey.Delete])
         trash_action.triggered.connect(self._trash_meme)
         toolbar.addAction(trash_action)
 
@@ -260,7 +260,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(rename_action)
 
         preview_action = QAction("Preview", self)
-        preview_action.setShortcut(QKeySequence("Space"))
+        preview_action.setShortcuts([QKeySequence("Ctrl+E"), QKeySequence("Space")])
         preview_action.triggered.connect(self._toggle_preview)
         toolbar.addAction(preview_action)
 
