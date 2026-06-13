@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meme-viewer"
-version = "0.3.0"
+version = "0.4.0"
 description = "PyQt6 GUI viewer for meme collections"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 meme-viewer = "meme_viewer.app:main"
+meme-serve = "meme_viewer.server:main"
 
 [tool.setuptools.packages.find]
 include = ["meme_viewer*"]

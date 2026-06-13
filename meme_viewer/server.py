@@ -102,6 +102,9 @@ VIEW_HTML = """<a class="back" href="/">&larr; Back</a>
 <div class="full"><img src="/images/{name}"></div>"""
 
 
+EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
 class MemeGalleryHandler(BaseHTTPRequestHandler):
     """HTTP request handler that serves the meme gallery."""
 
@@ -137,14 +140,7 @@ class MemeGalleryHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Not Found")
 
     def _gallery_page(self) -> str:
-        exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
-        if MEMES_DIR.exists():
-            files = sorted(
-                p for p in MEMES_DIR.iterdir()
-                if p.is_file() and p.suffix.lower() in exts
-            )
-        else:
-            files = []
+        files = self._meme_files()
         items = "\n".join(ITEM_HTML.format(name=p.name) for p in files)
         body = INDEX_CONTENT.replace("{{ITEMS}}", items)
         return GALLERY_HTML.replace("{{CONTENT}}", body)
@@ -153,10 +149,33 @@ class MemeGalleryHandler(BaseHTTPRequestHandler):
         body = VIEW_HTML.format(name=name)
         return GALLERY_HTML.replace("{{CONTENT}}", body)
 
+    @staticmethod
+    def _meme_files() -> list[Path]:
+        if not MEMES_DIR.exists():
+            return []
+        return sorted(
+            p for p in MEMES_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in EXTS
+        )
+
+    def _serve_json(self, data: object) -> None:
+        import json
+        payload = json.dumps(data).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_GET(self) -> None:
         path = self.path.split("?")[0]  # Strip query params
 
-        if path == "/":
+        if path == "/api/memes":
+            names = [p.name for p in self._meme_files()]
+            self._serve_json(names)
+
+        elif path == "/":
             html = self._gallery_page()
             data = html.encode("utf-8")
             self.send_response(200)
@@ -242,3 +261,31 @@ class MemeServer:
         finally:
             s.close()
         return ip
+
+
+def main() -> None:
+    """CLI entry point for `meme-serve`."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Serve meme collection over HTTP.")
+    parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
+    args = parser.parse_args()
+
+    server = MemeServer(host=args.host, port=args.port)
+    url = server.start()
+    print(f"Serving memes at {url}")
+    print(f"API: {url}/api/memes")
+    print("Press Ctrl+C to stop.")
+
+    try:
+        import signal
+        signal.signal(signal.SIGINT, lambda *_: server.stop())
+        signal.signal(signal.SIGTERM, lambda *_: server.stop())
+        # Keep main thread alive
+        import time
+        while server.is_running:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        server.stop()
+        print("\nServer stopped.")

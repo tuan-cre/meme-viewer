@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 import shutil
 import time
+import urllib.request
 from pathlib import Path
-
-from meme_viewer.server import MemeServer
 
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter, QImage
@@ -32,6 +31,8 @@ RECENT_FILE = MEMES_DIR / ".recent.json"
 THUMB_W = 120
 THUMB_H = 90
 PREVIEW_W = 520
+
+SERVER_URL_FILE = Path.home() / ".config" / "meme-viewer" / "server_url"
 
 
 STYLE_SHEET = """
@@ -194,13 +195,16 @@ class PreviewPanel(QScrollArea):
         if pixmap.isNull():
             self._label.setText("Failed to load image")
             return
+        self.set_pixmap(pixmap)
+
+    def set_pixmap(self, pixmap: QPixmap) -> None:
+        """Display a QPixmap directly (used for remote downloads)."""
         self._label.setObjectName("")
-        # Scale image to fit the scroll area's viewport, centered
         if self.width() > 0 and self.height() > 0:
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.FastTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self._label.setPixmap(scaled)
         else:
@@ -223,8 +227,7 @@ class MainWindow(QMainWindow):
         self._base_width = 400
         self._saved_width = 400
         self._recents: dict[str, float] = self._load_recents()
-        self._server = MemeServer()
-        self._server_active = False
+        self._remote_url: str = self._load_server_url()
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -319,7 +322,7 @@ class MainWindow(QMainWindow):
 
         act = QAction("Refresh", self)
         act.setShortcut(QKeySequence.StandardKey.Refresh)
-        act.triggered.connect(self._scan_dir)
+        act.triggered.connect(self._refresh)
         self.addAction(act)
 
         del act
@@ -335,21 +338,25 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         copy_act = menu.addAction("Copy")
-        trash_act = menu.addAction("Trash")
-        rename_act = menu.addAction("Rename")
+        menu.addSeparator()
         preview_act = menu.addAction("Preview")
         view_act = menu.addAction("Full View")
+        trash_act = rename_act = None
+        if not self._remote_url:
+            menu.addSeparator()
+            trash_act = menu.addAction("Trash")
+            rename_act = menu.addAction("Rename")
         action = menu.exec(self.list_widget.mapToGlobal(pos))
         if action == copy_act:
             self._copy_meme()
-        elif action == trash_act:
-            self._trash_meme()
-        elif action == rename_act:
-            self._rename_meme()
         elif action == preview_act:
             self._toggle_preview()
         elif action == view_act:
             self._open_full()
+        elif action is not None and action == trash_act:
+            self._trash_meme()
+        elif action is not None and action == rename_act:
+            self._rename_meme()
 
     # ------------------------------------------------------------------
     # Preview panel logic
@@ -357,8 +364,15 @@ class MainWindow(QMainWindow):
     def _on_select(self, current: QListWidgetItem | None, _prev: QListWidgetItem | None) -> None:
         if current is None:
             return
-        path = Path(current.data(Qt.ItemDataRole.UserRole))
-        self.preview.show_pixmap(path)
+        name = current.data(Qt.ItemDataRole.UserRole)
+        if self._remote_url:
+            pixmap = self._download_image(self._remote_image_url(name))
+            if pixmap is not None:
+                self.preview.set_pixmap(pixmap)
+            else:
+                self.preview.clear_preview()
+        else:
+            self.preview.show_pixmap(Path(name))
 
     def _apply_collapsed(self) -> None:
         new_w = max(self._saved_width, self._base_width)
@@ -405,29 +419,94 @@ class MainWindow(QMainWindow):
             self._apply_expanded()
 
     # ------------------------------------------------------------------
-    # Server mode
+    # Remote / Server client mode
     # ------------------------------------------------------------------
+    def _load_server_url(self) -> str:
+        try:
+            if SERVER_URL_FILE.exists():
+                data = SERVER_URL_FILE.read_text().strip()
+                if data.startswith("http://") or data.startswith("https://"):
+                    return data
+        except OSError:
+            pass
+        return ""
+
+    def _save_server_url(self, url: str) -> None:
+        try:
+            SERVER_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
+            SERVER_URL_FILE.write_text(url)
+        except OSError:
+            pass
+
     def _toggle_mode(self, checked: bool) -> None:
         if checked:
-            self._start_server()
+            url = self._remote_url
+            if not url:
+                url, ok = QInputDialog.getText(
+                    self,
+                    "Connect to Server",
+                    "Enter meme-serve URL (e.g. http://192.168.1.68:8765):",
+                    text=url,
+                )
+                if not ok or not url.strip():
+                    self.mode_btn.setChecked(False)
+                    return
+                url = url.strip().rstrip("/")
+                self._remote_url = url
+                self._save_server_url(url)
+            self._connect_remote(url)
         else:
-            self._stop_server()
+            self._disconnect_remote()
 
-    def _start_server(self) -> None:
-        url = self._server.start()
-        self._server_active = True
+    def _connect_remote(self, url: str) -> None:
+        """Fetch remote meme list and switch to remote mode."""
+        try:
+            resp = urllib.request.urlopen(f"{url}/api/memes", timeout=5)
+            names: list[str] = json.loads(resp.read().decode())
+        except Exception as e:
+            QMessageBox.warning(self, "Connection Failed", f"Could not fetch memes:\n{e}")
+            self.mode_btn.setChecked(False)
+            return
+
+        self._remote_url = url
+        self._save_server_url(url)
+        self.list_widget.clear()
+        for name in names:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.list_widget.addItem(item)
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+        else:
+            self.preview.clear_preview()
+
         self.mode_btn.setText("Server")
         self.mode_btn.setToolTip(url)
         self.setWindowTitle(f"Meme Collection QL  [ {url} ]")
-        print(f"[server] started at {url}")
+        print(f"[remote] connected to {url} ({len(names)} memes)")
 
-    def _stop_server(self) -> None:
-        self._server.stop()
-        self._server_active = False
+    def _disconnect_remote(self) -> None:
+        """Switch back to local mode."""
+        self._remote_url = ""
         self.mode_btn.setText("Local")
         self.mode_btn.setToolTip("")
         self.setWindowTitle("Meme Collection QL")
-        print("[server] stopped")
+        self._scan_dir()
+        print("[remote] disconnected")
+
+    def _remote_image_url(self, name: str) -> str:
+        return f"{self._remote_url}/images/{name}"
+
+    def _download_image(self, url: str) -> QPixmap | None:
+        """Download an image from URL and return as QPixmap."""
+        try:
+            data = urllib.request.urlopen(url, timeout=10).read()
+            pixmap = QPixmap()
+            if pixmap.loadFromData(data):
+                return pixmap
+        except Exception:
+            pass
+        return None
 
     # ------------------------------------------------------------------
     # Recency tracking
@@ -476,41 +555,69 @@ class MainWindow(QMainWindow):
         else:
             self.preview.clear_preview()
 
+    def _refresh(self) -> None:
+        if self._remote_url:
+            self._connect_remote(self._remote_url)
+        else:
+            self._scan_dir()
+
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
-    def _selected_path(self) -> Path | None:
+    def _selected_name(self) -> str | None:
         item = self.list_widget.currentItem()
         if item is None:
             return None
-        return Path(item.data(Qt.ItemDataRole.UserRole))
+        return item.data(Qt.ItemDataRole.UserRole)
+
+    def _selected_path(self) -> Path | None:
+        if self._remote_url:
+            return None
+        name = self._selected_name()
+        return Path(name) if name else None
 
     def _copy_and_exit(self) -> None:
-        path = self._selected_path()
-        if path is not None and path.exists():
-            pixmap = QPixmap(str(path))
-            if not pixmap.isNull():
-                clipboard = QApplication.clipboard()
-                clipboard.setImage(pixmap.toImage())
-                self._clipboard_modified = True
-                self._copied_pixmap = pixmap
-            self._mark_used(path)
+        name = self._selected_name()
+        if name is None:
+            QTimer.singleShot(0, QApplication.quit)
+            return
+        if self._remote_url:
+            pixmap = self._download_image(self._remote_image_url(name))
+        else:
+            path = Path(name)
+            pixmap = QPixmap(str(path)) if path.exists() else None
+        if pixmap is not None and not pixmap.isNull():
+            clipboard = QApplication.clipboard()
+            clipboard.setImage(pixmap.toImage())
+            self._clipboard_modified = True
+            self._copied_pixmap = pixmap
+            if not self._remote_url:
+                self._mark_used(Path(name))
         QTimer.singleShot(0, QApplication.quit)
 
     def _copy_meme(self) -> None:
-        path = self._selected_path()
-        if path is None or not path.exists():
+        name = self._selected_name()
+        if name is None:
             return
-        pixmap = QPixmap(str(path))
-        if pixmap.isNull():
+        if self._remote_url:
+            pixmap = self._download_image(self._remote_image_url(name))
+        else:
+            path = Path(name)
+            if not path.exists():
+                return
+            pixmap = QPixmap(str(path))
+        if pixmap is None or pixmap.isNull():
             return
         clipboard = QApplication.clipboard()
         clipboard.setPixmap(pixmap)
         self._clipboard_modified = True
         self._copied_pixmap = pixmap
-        self._mark_used(path)
+        if not self._remote_url:
+            self._mark_used(Path(name))
 
     def _trash_meme(self) -> None:
+        if self._remote_url:
+            return
         path = self._selected_path()
         if path is None or not path.exists():
             return
@@ -533,6 +640,8 @@ class MainWindow(QMainWindow):
         self._scan_dir()
 
     def _rename_meme(self) -> None:
+        if self._remote_url:
+            return
         path = self._selected_path()
         if path is None or not path.exists():
             return
@@ -555,17 +664,21 @@ class MainWindow(QMainWindow):
         self._scan_dir()
 
     def _open_full(self) -> None:
-        path = self._selected_path()
-        if path is None or not path.exists():
+        name = self._selected_name()
+        if name is None:
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-        self._mark_used(path)
+        if self._remote_url:
+            QDesktopServices.openUrl(QUrl(self._remote_image_url(name)))
+        else:
+            path = Path(name)
+            if path.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+                self._mark_used(path)
 
     # ------------------------------------------------------------------
     # Events
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:
-        self._server.stop()
         self._clipboard_modified = False
         event.accept()
 
