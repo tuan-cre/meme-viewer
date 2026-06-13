@@ -48,8 +48,8 @@ QListWidget {
     padding: 6px;
 }
 QListWidget::item {
-    padding: 4px;
-    margin: 3px 0;
+    padding: 2px;
+    margin: 1px 0;
     border-radius: 6px;
     color: #c7a0c8;
 }
@@ -96,7 +96,7 @@ QToolBar {
     background-color: #08080d;
     border-bottom: 1px solid #1a1423;
     spacing: 4px;
-    padding: 4px;
+    padding: 2px;
 }
 QToolBar QToolButton {
     color: #c7a0c8;
@@ -158,8 +158,10 @@ class MemeList(QListWidget):
         self.setViewMode(QListWidget.ViewMode.ListMode)
         self.setIconSize(QSize(THUMB_W, THUMB_H))
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.setWordWrap(True)
-        self.setSpacing(3)
+        self.setWordWrap(False)
+        self.setTextElideMode(Qt.ElideRight)
+        self.setSpacing(1)
+        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
 
 
 class PreviewPanel(QScrollArea):
