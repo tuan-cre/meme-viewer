@@ -200,10 +200,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Meme Collection QL")
-        self.resize(800, 600)
+        self.resize(600, 450)
         self._clipboard_modified = False
         self._preview_visible = False
-        self._base_width = 800
+        self._base_width = 600
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -214,7 +214,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         # Start collapsed — right panel width = 0
-        splitter.setSizes([800, 0])
+        splitter.setSizes([self._base_width, 0])
         self.preview.setMinimumWidth(0)
         self.preview.setMaximumWidth(0)
 
