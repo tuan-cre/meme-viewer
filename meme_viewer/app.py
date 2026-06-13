@@ -24,8 +24,8 @@ from PyQt6.QtCore import QUrl
 
 MEMES_DIR = Path.home() / ".local" / "share" / "memes"
 TRASH_DIR = MEMES_DIR / ".trash"
-THUMB_W = 200
-THUMB_H = 150
+THUMB_W = 120
+THUMB_H = 90
 PREVIEW_W = 520
 
 
