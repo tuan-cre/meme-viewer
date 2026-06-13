@@ -308,14 +308,23 @@ class MainWindow(QMainWindow):
         self.preview.show_pixmap(path)
 
     def _apply_collapsed(self) -> None:
-        self.preview.setMinimumWidth(0)
         new_w = max(self._saved_width, self._base_width)
         print(f"[debug] collapse: _saved_width={self._saved_width} _base_width={self._base_width} new_w={new_w}")
-        self._splitter.setSizes([new_w, 0])
+        # Disable preview constraints BEFORE splitter sizing
+        self.preview.setMinimumWidth(0)
         self.preview.setMaximumWidth(0)
+        self._splitter.setSizes([new_w, 0])
+        self._preview_visible = False
+        # Force window to desired width (splitter's size request can fight resize)
         self.resize(new_w, self.height())
         print(f"[debug] collapse: after resize width={self.width()}")
-        self._preview_visible = False
+        if self.width() != new_w:
+            print(f"[debug] collapse: width mismatch, forcing to {new_w}")
+            self.setFixedWidth(new_w)
+            QTimer.singleShot(0, lambda: (
+                self.setMinimumWidth(0),
+                self.setMaximumWidth(16777215),
+            ))
 
     def _apply_expanded(self) -> None:
         # Save current window width so collapse can restore it exactly
