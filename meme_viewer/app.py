@@ -229,8 +229,6 @@ class MainWindow(QMainWindow):
         # Tab toggles between search bar and list (not individual items)
         self.list_widget.setTabKeyNavigation(False)
         self.preview.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setTabOrder(self.search_bar, self.list_widget)
-        self.setTabOrder(self.list_widget, self.search_bar)
 
         self.list_widget.currentItemChanged.connect(self._on_select)
         self.list_widget.itemActivated.connect(self._copy_and_exit)
