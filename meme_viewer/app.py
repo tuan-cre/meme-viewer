@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -372,7 +372,7 @@ class MainWindow(QMainWindow):
                 clipboard = QApplication.clipboard()
                 clipboard.setPixmap(pixmap)
                 self._clipboard_modified = True
-        QApplication.quit()
+        QTimer.singleShot(0, QApplication.quit)
 
     def _copy_meme(self) -> None:
         path = self._selected_path()
