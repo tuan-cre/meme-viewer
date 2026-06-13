@@ -200,10 +200,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Meme Collection QL")
-        self.resize(600, 450)
+        self.resize(400, 800)
         self._clipboard_modified = False
         self._preview_visible = False
-        self._base_width = 600
+        self._base_width = 400
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
