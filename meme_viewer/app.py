@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import shutil
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize, QTimer
@@ -24,6 +26,7 @@ from PyQt6.QtCore import QUrl
 
 MEMES_DIR = Path.home() / ".local" / "share" / "memes"
 TRASH_DIR = MEMES_DIR / ".trash"
+RECENT_FILE = MEMES_DIR / ".recent.json"
 THUMB_W = 120
 THUMB_H = 90
 PREVIEW_W = 520
@@ -198,6 +201,7 @@ class MainWindow(QMainWindow):
         self._preview_visible = False
         self._base_width = 400
         self._saved_width = 400
+        self._recents: dict[str, float] = self._load_recents()
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -358,15 +362,42 @@ class MainWindow(QMainWindow):
             self._apply_expanded()
 
     # ------------------------------------------------------------------
+    # Recency tracking
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _load_recents() -> dict[str, float]:
+        if RECENT_FILE.exists():
+            try:
+                data = json.loads(RECENT_FILE.read_text())
+                if isinstance(data, dict):
+                    return data
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {}
+
+    def _save_recents(self) -> None:
+        try:
+            RECENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            RECENT_FILE.write_text(json.dumps(self._recents, indent=0))
+        except OSError:
+            pass
+
+    def _mark_used(self, path: Path) -> None:
+        self._recents[path.name] = time.time()
+        self._save_recents()
+
+    # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
     def _scan_dir(self) -> None:
         if not MEMES_DIR.exists():
             MEMES_DIR.mkdir(parents=True, exist_ok=True)
         exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
-        files = sorted(
+        files = [
             p for p in MEMES_DIR.iterdir() if p.is_file() and p.suffix.lower() in exts
-        )
+        ]
+        # Sort by recency — most recently used first, untracked files at end
+        files.sort(key=lambda p: self._recents.get(p.name, 0), reverse=True)
         self.list_widget.clear()
         for path in files:
             item = QListWidgetItem(_load_thumb(path), path.name)
@@ -395,6 +426,7 @@ class MainWindow(QMainWindow):
                 clipboard.setImage(pixmap.toImage())
                 self._clipboard_modified = True
                 self._copied_pixmap = pixmap
+            self._mark_used(path)
         QTimer.singleShot(0, QApplication.quit)
 
     def _copy_meme(self) -> None:
@@ -408,6 +440,7 @@ class MainWindow(QMainWindow):
         clipboard.setPixmap(pixmap)
         self._clipboard_modified = True
         self._copied_pixmap = pixmap
+        self._mark_used(path)
 
     def _trash_meme(self) -> None:
         path = self._selected_path()
@@ -458,6 +491,7 @@ class MainWindow(QMainWindow):
         if path is None or not path.exists():
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        self._mark_used(path)
 
     # ------------------------------------------------------------------
     # Events
