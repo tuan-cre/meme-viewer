@@ -243,6 +243,57 @@ class MemeGalleryHandler(BaseHTTPRequestHandler):
         else:
             self._serve_404()
 
+    def do_POST(self) -> None:
+        path = self.path.split("?")[0]
+
+        if path.startswith("/upload/"):
+            self._handle_upload(path)
+        else:
+            self._serve_404()
+
+    def _handle_upload(self, path: str) -> None:
+        import urllib.parse
+        import json
+
+        name = urllib.parse.unquote(path[8:])  # /upload/ -> 8 chars
+        filepath = MEMES_DIR / name
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        data = self.rfile.read(content_length)
+
+        if not data:
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": False, "error": "Empty data"}).encode())
+            return
+
+        # Avoid overwriting existing files
+        if filepath.exists():
+            stem = filepath.stem
+            suffix = filepath.suffix
+            i = 1
+            while filepath.exists():
+                filepath = MEMES_DIR / f"{stem}_{i}{suffix}"
+                i += 1
+
+        try:
+            filepath.write_bytes(data)
+            self._serve_json({"ok": True, "filename": filepath.name})
+        except OSError as e:
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode())
+
+    def do_OPTIONS(self) -> None:
+        """Handle CORS preflight — allow cross-origin uploads."""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
 
 class MemeServer:
     """Lightweight HTTP server serving the meme collection."""

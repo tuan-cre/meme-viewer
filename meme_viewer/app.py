@@ -6,7 +6,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtCore import Qt, QSize, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter, QImage
 from PyQt6.QtWidgets import (
     QApplication,
@@ -27,6 +27,7 @@ from PyQt6.QtCore import QUrl
 
 MEMES_DIR = Path.home() / ".local" / "share" / "memes"
 TRASH_DIR = MEMES_DIR / ".trash"
+EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 RECENT_FILE = MEMES_DIR / ".recent.json"
 THUMB_W = 120
 THUMB_H = 90
@@ -153,6 +154,8 @@ def _load_thumb(path: Path) -> QIcon:
 
 
 class MemeList(QListWidget):
+    files_dropped = pyqtSignal(list)  # list[Path]
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setViewMode(QListWidget.ViewMode.ListMode)
@@ -161,6 +164,34 @@ class MemeList(QListWidget):
         self.setWordWrap(False)
         self.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.setSpacing(1)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in EXTS:
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        files: list[Path] = []
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                path = Path(url.toLocalFile())
+                if path.suffix.lower() in EXTS:
+                    files.append(path)
+        if files:
+            self.files_dropped.emit(files)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 
 class PreviewPanel(QScrollArea):
@@ -241,6 +272,7 @@ class MainWindow(QMainWindow):
 
         self.list_widget.currentItemChanged.connect(self._on_select)
         self.list_widget.itemActivated.connect(self._copy_and_exit)
+        self.list_widget.files_dropped.connect(self._add_files)
 
         self._build_shortcuts()
         self._build_context_menu()
@@ -249,10 +281,8 @@ class MainWindow(QMainWindow):
             # Auto-connect to saved remote server after event loop starts
             QTimer.singleShot(0, lambda: self._connect_remote(self._remote_url))
         else:
+            self._remote_url = ""  # Clear URL — not in remote mode
             self._scan_dir()
-
-        # Restore collapsed state after _scan_dir (which selects row 0)
-        if not (self._remote_url and self._mode == "remote"):
             self._apply_collapsed()
         print(f"[debug] init: after _apply_collapsed width={self.width()} _saved_width={self._saved_width}")
 
@@ -306,6 +336,11 @@ class MainWindow(QMainWindow):
         act = QAction("Change Server URL", self)
         act.setShortcut(QKeySequence("Ctrl+Shift+S"))
         act.triggered.connect(self._reset_server_url)
+        self.addAction(act)
+
+        act = QAction("Add Images", self)
+        act.setShortcut(QKeySequence("Ctrl+A"))
+        act.triggered.connect(self._add_files_dialog)
         self.addAction(act)
 
         del act
@@ -599,6 +634,77 @@ class MainWindow(QMainWindow):
             self._connect_remote(self._remote_url)
         else:
             self._scan_dir()
+
+    # ------------------------------------------------------------------
+    # Add files (local copy or remote upload)
+    # ------------------------------------------------------------------
+    def _add_files(self, paths: list[Path]) -> None:
+        """Add image files to the collection."""
+        if self._remote_url:
+            self._upload_files(paths)
+        else:
+            self._copy_files_local(paths)
+
+    def _add_files_dialog(self) -> None:
+        """Open file dialog to select image files to add."""
+        from PyQt6.QtWidgets import QFileDialog
+        paths_str, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Add Images",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp)",
+        )
+        if not paths_str:
+            return
+        self._add_files([Path(p) for p in paths_str])
+
+    def _copy_files_local(self, paths: list[Path]) -> None:
+        """Copy image files to local MEMES_DIR."""
+        count = 0
+        for path in paths:
+            try:
+                dest = MEMES_DIR / path.name
+                if dest.exists():
+                    stem = path.stem
+                    suffix = path.suffix
+                    i = 1
+                    while dest.exists():
+                        dest = MEMES_DIR / f"{stem}_{i}{suffix}"
+                        i += 1
+                shutil.copy2(str(path), str(dest))
+                count += 1
+            except OSError as e:
+                print(f"[add] failed to copy {path.name}: {e}")
+        if count > 0:
+            self._scan_dir()
+            print(f"[add] added {count} file(s)")
+
+    def _upload_files(self, paths: list[Path]) -> None:
+        """Upload image files to remote server."""
+        import urllib.parse
+        count = 0
+        for path in paths:
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                req = urllib.request.Request(
+                    f"{self._remote_url}/upload/{urllib.parse.quote(path.name)}",
+                    data=data,
+                    method="POST",
+                )
+                req.add_header("Content-Type", "application/octet-stream")
+                resp = urllib.request.urlopen(req, timeout=30)
+                import json
+                result = json.loads(resp.read().decode())
+                if result.get("ok"):
+                    count += 1
+                else:
+                    print(f"[upload] server rejected {path.name}: {result.get('error')}")
+            except Exception as e:
+                print(f"[upload] failed to upload {path.name}: {e}")
+        if count > 0:
+            self._connect_remote(self._remote_url)
+            print(f"[upload] uploaded {count} file(s)")
 
     # ------------------------------------------------------------------
     # Actions
