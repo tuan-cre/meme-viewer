@@ -301,6 +301,11 @@ class MainWindow(QMainWindow):
         act.triggered.connect(self._toggle_mode)
         self.addAction(act)
 
+        act = QAction("Change Server URL", self)
+        act.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        act.triggered.connect(self._reset_server_url)
+        self.addAction(act)
+
         del act
 
     def _build_context_menu(self) -> None:
@@ -416,18 +421,38 @@ class MainWindow(QMainWindow):
 
     def _toggle_mode(self) -> None:
         if self._remote_url:
+            # Connected — disconnect back to local
             self._disconnect_remote()
         else:
-            url, ok = QInputDialog.getText(
-                self,
-                "Connect to Server",
-                "Enter meme-serve URL (e.g. http://192.168.1.68:8765):",
-                text=self._load_server_url(),
-            )
-            if not ok or not url or not url.strip():
-                return
-            url = url.strip().rstrip("/")
-            self._connect_remote(url)
+            saved = self._load_server_url()
+            if saved:
+                # Silent reconnect using saved URL
+                self._connect_remote(saved)
+            else:
+                # No saved URL — prompt for one
+                url, ok = QInputDialog.getText(
+                    self,
+                    "Connect to Server",
+                    "Enter meme-serve URL (e.g. http://192.168.1.68:8765):",
+                )
+                if not ok or not url or not url.strip():
+                    return
+                url = url.strip().rstrip("/")
+                self._connect_remote(url)
+
+    def _reset_server_url(self) -> None:
+        """Always prompt for a new URL, even if one is saved."""
+        saved = self._load_server_url()
+        url, ok = QInputDialog.getText(
+            self,
+            "Change Server URL",
+            "Enter new meme-serve URL:",
+            text=saved,
+        )
+        if not ok or not url or not url.strip():
+            return
+        url = url.strip().rstrip("/")
+        self._connect_remote(url)
 
     def _connect_remote(self, url: str) -> None:
         """Fetch remote meme list and switch to remote mode."""
