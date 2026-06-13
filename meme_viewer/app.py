@@ -9,13 +9,13 @@ from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QScrollArea,
     QSplitter,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -92,25 +92,18 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
 }
 
-QToolBar {
-    background-color: #08080d;
-    border-bottom: 1px solid #1a1423;
-    spacing: 4px;
-    padding: 2px;
-}
-QToolBar QToolButton {
-    color: #c7a0c8;
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-QToolBar QToolButton:hover {
+QLineEdit#search_bar {
     background-color: #0f0f18;
-    border-color: #b48ead;
+    border: 1px solid #1a1423;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #c7a0c8;
+    selection-background-color: #b48ead;
+    selection-color: #050508;
+    font-size: 13px;
 }
-QToolBar QToolButton:pressed {
-    background-color: #1a1423;
+QLineEdit#search_bar:focus {
+    border-color: #b48ead;
 }
 
 QLabel#placeholder {
@@ -223,6 +216,8 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        self._build_searchbar()
+        layout.addWidget(self.search_bar)
         layout.addWidget(splitter)
         self.setCentralWidget(container)
         self._splitter = splitter
@@ -230,7 +225,7 @@ class MainWindow(QMainWindow):
         self.list_widget.currentItemChanged.connect(self._on_select)
         self.list_widget.itemActivated.connect(self._copy_and_exit)
 
-        self._build_toolbar()
+        self._build_shortcuts()
         self._build_context_menu()
         self._scan_dir()
 
@@ -241,35 +236,46 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # UI setup
     # ------------------------------------------------------------------
-    def _build_toolbar(self) -> None:
-        toolbar = QToolBar("Main Toolbar")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
+    def _build_searchbar(self) -> None:
+        self.search_bar = QLineEdit()
+        self.search_bar.setObjectName("search_bar")
+        self.search_bar.setPlaceholderText("Search memes...")
+        self.search_bar.textChanged.connect(self._filter_list)
 
-        copy_action = QAction("Copy", self)
-        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
-        copy_action.triggered.connect(self._copy_meme)
-        toolbar.addAction(copy_action)
+    def _filter_list(self, text: str) -> None:
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item is None:
+                continue
+            item.setHidden(text.lower() not in item.text().lower())
 
-        trash_action = QAction("Trash", self)
-        trash_action.setShortcuts([QKeySequence("Ctrl+D"), QKeySequence.StandardKey.Delete])
-        trash_action.triggered.connect(self._trash_meme)
-        toolbar.addAction(trash_action)
+    def _build_shortcuts(self) -> None:
+        act = QAction("Copy", self)
+        act.setShortcuts([QKeySequence("Ctrl+C"), QKeySequence.StandardKey.Copy])
+        act.triggered.connect(self._copy_meme)
+        self.addAction(act)
 
-        rename_action = QAction("Rename", self)
-        rename_action.setShortcut(QKeySequence("Ctrl+R"))
-        rename_action.triggered.connect(self._rename_meme)
-        toolbar.addAction(rename_action)
+        act = QAction("Trash", self)
+        act.setShortcuts([QKeySequence("Ctrl+D"), QKeySequence.StandardKey.Delete])
+        act.triggered.connect(self._trash_meme)
+        self.addAction(act)
 
-        preview_action = QAction("Preview", self)
-        preview_action.setShortcuts([QKeySequence("Ctrl+E"), QKeySequence("Space")])
-        preview_action.triggered.connect(self._toggle_preview)
-        toolbar.addAction(preview_action)
+        act = QAction("Rename", self)
+        act.setShortcut(QKeySequence("Ctrl+R"))
+        act.triggered.connect(self._rename_meme)
+        self.addAction(act)
 
-        refresh_action = QAction("Refresh", self)
-        refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)
-        refresh_action.triggered.connect(self._scan_dir)
-        toolbar.addAction(refresh_action)
+        act = QAction("Preview", self)
+        act.setShortcuts([QKeySequence("Ctrl+E"), QKeySequence("Space")])
+        act.triggered.connect(self._toggle_preview)
+        self.addAction(act)
+
+        act = QAction("Refresh", self)
+        act.setShortcut(QKeySequence.StandardKey.Refresh)
+        act.triggered.connect(self._scan_dir)
+        self.addAction(act)
+
+        del act
 
     def _build_context_menu(self) -> None:
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
