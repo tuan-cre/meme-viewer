@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter, QImage
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -253,6 +254,9 @@ class MainWindow(QMainWindow):
         self._recents: dict[str, float] = self._load_recents()
         self._remote_url: str = self._load_server_url()
         self._mode: str = self._load_mode()
+        self._nam = QNetworkAccessManager()
+        self._nam.finished.connect(self._on_remote_image_ready)
+        self._image_cache: dict[str, QPixmap] = {}
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -396,13 +400,34 @@ class MainWindow(QMainWindow):
             return
         name = current.data(Qt.ItemDataRole.UserRole)
         if self._remote_url:
-            pixmap = self._download_image(self._remote_image_url(name))
-            if pixmap is not None:
-                self.preview.set_pixmap(pixmap)
-            else:
-                self.preview.clear_preview()
+            # Check memory cache first
+            cached = self._image_cache.get(name)
+            if cached is not None:
+                self.preview.set_pixmap(cached)
+                return
+            # Download async — doesn't block UI
+            url = QUrl(self._remote_image_url(name))
+            reply = self._nam.get(QNetworkRequest(url))
+            reply._cache_name = name  # Store name for callback
+            if hasattr(self, '_pending_preview'):
+                self._pending_preview.abort()
+            self._pending_preview = reply
         else:
             self.preview.show_pixmap(Path(name))
+
+    def _on_remote_image_ready(self, reply: QNetworkReply) -> None:
+        cache_name: str | None = getattr(reply, '_cache_name', None)
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            if cache_name and cache_name not in self._image_cache:
+                self.preview.clear_preview()
+            reply.deleteLater()
+            return
+        data = reply.readAll()
+        pixmap = QPixmap()
+        if pixmap.loadFromData(data) and cache_name:
+            self._image_cache[cache_name] = pixmap
+            self.preview.set_pixmap(pixmap)
+        reply.deleteLater()
 
     def _apply_collapsed(self) -> None:
         new_w = max(self._saved_width, self._base_width)
