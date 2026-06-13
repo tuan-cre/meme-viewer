@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence
+from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -134,13 +134,22 @@ def _load_thumb(path: Path) -> QIcon:
     pixmap = QPixmap(str(path))
     if pixmap.isNull():
         return QIcon()
-    thumb = pixmap.scaled(
+    scaled = pixmap.scaled(
         THUMB_W,
         THUMB_H,
         Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
-    return QIcon(thumb)
+    canvas = QPixmap(THUMB_W, THUMB_H)
+    canvas.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap(
+        (THUMB_W - scaled.width()) // 2,
+        (THUMB_H - scaled.height()) // 2,
+        scaled,
+    )
+    painter.end()
+    return QIcon(canvas)
 
 
 class MemeList(QListWidget):
@@ -168,7 +177,21 @@ class PreviewPanel(QScrollArea):
             self._label.setText("Failed to load image")
             return
         self._label.setObjectName("")
-        self._label.setPixmap(pixmap)
+        viewport = self.viewport()
+        if (
+            viewport is not None and
+            not viewport.isNull() and
+            viewport.width() > 0 and
+            viewport.height() > 0
+        ):
+            scaled = pixmap.scaled(
+                viewport.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self._label.setPixmap(scaled)
+        else:
+            self._label.setPixmap(pixmap)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def clear_preview(self) -> None:
@@ -287,19 +310,27 @@ class MainWindow(QMainWindow):
         self.preview.show_pixmap(path)
 
     def _apply_collapsed(self) -> None:
-        self._splitter.setSizes([self._splitter.width(), 0])
         self.preview.setMinimumWidth(0)
+        new_w = max(self.width() - PREVIEW_W, self._base_width)
+        self.resize(new_w, self.height())
+        self._splitter.setSizes([self._splitter.width(), 0])
         self.preview.setMaximumWidth(0)
         self._preview_visible = False
 
     def _apply_expanded(self) -> None:
         # Grow the window width to make room — left panel stays fixed
+        sizes = self._splitter.sizes()
+        left_width = sizes[0] if sizes else 330
         new_w = self.width() + PREVIEW_W
         self.resize(new_w, self.height())
-        self._splitter.setSizes([330, PREVIEW_W])
+        self._splitter.setSizes([left_width, PREVIEW_W])
         self.preview.setMinimumWidth(PREVIEW_W)
         self.preview.setMaximumWidth(16777215)
         self._preview_visible = True
+        # Refresh the displayed image to scale to new viewport size
+        current_item = self.list_widget.currentItem()
+        if current_item:
+            self._on_select(current_item, None)
 
     def _toggle_preview(self) -> None:
         if self._preview_visible:
