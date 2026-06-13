@@ -364,6 +364,16 @@ class MainWindow(QMainWindow):
             return None
         return Path(item.data(Qt.ItemDataRole.UserRole))
 
+    def _copy_and_exit(self) -> None:
+        path = self._selected_path()
+        if path is not None and path.exists():
+            pixmap = QPixmap(str(path))
+            if not pixmap.isNull():
+                clipboard = QApplication.clipboard()
+                clipboard.setPixmap(pixmap)
+                self._clipboard_modified = True
+        QApplication.quit()
+
     def _copy_meme(self) -> None:
         path = self._selected_path()
         if path is None or not path.exists():
