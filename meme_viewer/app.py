@@ -228,7 +228,7 @@ class MainWindow(QMainWindow):
         self._splitter = splitter
 
         self.list_widget.currentItemChanged.connect(self._on_select)
-        self.list_widget.itemActivated.connect(self._open_full)
+        self.list_widget.itemActivated.connect(self._copy_and_exit)
 
         self._build_toolbar()
         self._build_context_menu()
