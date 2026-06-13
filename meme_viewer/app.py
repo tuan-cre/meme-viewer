@@ -33,6 +33,7 @@ THUMB_H = 90
 PREVIEW_W = 520
 
 SERVER_URL_FILE = Path.home() / ".config" / "meme-viewer" / "server_url"
+MODE_FILE = Path.home() / ".config" / "meme-viewer" / "mode"
 
 
 STYLE_SHEET = """
@@ -209,6 +210,7 @@ class MainWindow(QMainWindow):
         self._saved_width = 400
         self._recents: dict[str, float] = self._load_recents()
         self._remote_url: str = self._load_server_url()
+        self._mode: str = self._load_mode()
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -243,14 +245,14 @@ class MainWindow(QMainWindow):
         self._build_shortcuts()
         self._build_context_menu()
 
-        if self._remote_url:
+        if self._remote_url and self._mode == "remote":
             # Auto-connect to saved remote server after event loop starts
             QTimer.singleShot(0, lambda: self._connect_remote(self._remote_url))
         else:
             self._scan_dir()
 
         # Restore collapsed state after _scan_dir (which selects row 0)
-        if not self._remote_url:
+        if not (self._remote_url and self._mode == "remote"):
             self._apply_collapsed()
         print(f"[debug] init: after _apply_collapsed width={self.width()} _saved_width={self._saved_width}")
 
@@ -419,6 +421,23 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
+    @staticmethod
+    def _load_mode() -> str:
+        try:
+            if MODE_FILE.exists():
+                return MODE_FILE.read_text().strip()
+        except OSError:
+            pass
+        return "local"
+
+    @staticmethod
+    def _save_mode(mode: str) -> None:
+        try:
+            MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            MODE_FILE.write_text(mode)
+        except OSError:
+            pass
+
     def _toggle_mode(self) -> None:
         if self._remote_url:
             # Connected — disconnect back to local
@@ -465,6 +484,7 @@ class MainWindow(QMainWindow):
 
         self._remote_url = url
         self._save_server_url(url)
+        self._save_mode("remote")
         self.list_widget.clear()
         for name in names:
             item = QListWidgetItem(name)
@@ -506,8 +526,9 @@ class MainWindow(QMainWindow):
                 item.setIcon(icon)
 
     def _disconnect_remote(self) -> None:
-        """Switch back to local mode."""
+        """Switch back to local mode. URL is kept for later use."""
         self._remote_url = ""
+        self._save_mode("local")
         self.setWindowTitle("Meme Collection QL")
         self._scan_dir()
         print("[remote] disconnected")
