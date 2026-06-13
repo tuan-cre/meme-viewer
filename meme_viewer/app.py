@@ -161,7 +161,7 @@ class MemeList(QListWidget):
         self.setWordWrap(False)
         self.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.setSpacing(1)
-        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.setMaximumWidth(THUMB_W * 3)
 
 
 class PreviewPanel(QScrollArea):
