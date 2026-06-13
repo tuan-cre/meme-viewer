@@ -203,9 +203,20 @@ class PreviewPanel(QScrollArea):
         self.setWidget(self._label)
         self.setWidgetResizable(True)
 
+    @staticmethod
+    def _load_pixmap_safe(path: Path) -> QPixmap | None:
+        """Load image from file, detecting format from content not extension."""
+        try:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(path.read_bytes()):
+                return pixmap
+        except OSError:
+            pass
+        return None
+
     def show_pixmap(self, path: Path) -> None:
-        pixmap = QPixmap(str(path))
-        if pixmap.isNull():
+        pixmap = self._load_pixmap_safe(path)
+        if pixmap is None:
             self._label.setText("Failed to load image")
             return
         self.set_pixmap(pixmap)
@@ -730,7 +741,7 @@ class MainWindow(QMainWindow):
             pixmap = self._download_image(self._remote_image_url(name))
         else:
             path = Path(name)
-            pixmap = QPixmap(str(path)) if path.exists() else None
+            pixmap = PreviewPanel._load_pixmap_safe(path) if path.exists() else None
         if pixmap is not None and not pixmap.isNull():
             clipboard = QApplication.clipboard()
             clipboard.setImage(pixmap.toImage())
@@ -750,7 +761,7 @@ class MainWindow(QMainWindow):
             path = Path(name)
             if not path.exists():
                 return
-            pixmap = QPixmap(str(path))
+            pixmap = PreviewPanel._load_pixmap_safe(path)
         if pixmap is None or pixmap.isNull():
             return
         clipboard = QApplication.clipboard()
