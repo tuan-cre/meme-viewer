@@ -453,6 +453,33 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Meme Collection QL  [ {url} ]")
         print(f"[remote] connected to {url} ({len(names)} memes)")
 
+        # Fetch thumbnails in background
+        QTimer.singleShot(0, lambda: self._fetch_remote_thumbs(url))
+
+    def _fetch_remote_thumbs(self, url: str) -> None:
+        icons: dict[str, QIcon] = {}
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item is None:
+                continue
+            name = item.data(Qt.ItemDataRole.UserRole) or item.text()
+            try:
+                resp = urllib.request.urlopen(f"{url}/thumb/{name}", timeout=5)
+                pixmap = QPixmap()
+                if pixmap.loadFromData(resp.read()) and not pixmap.isNull():
+                    icons[name] = QIcon(pixmap)
+            except Exception:
+                pass
+            QApplication.processEvents()
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item is None:
+                continue
+            name = item.data(Qt.ItemDataRole.UserRole) or item.text()
+            icon = icons.get(name)
+            if icon is not None:
+                item.setIcon(icon)
+
     def _disconnect_remote(self) -> None:
         """Switch back to local mode."""
         self._remote_url = ""

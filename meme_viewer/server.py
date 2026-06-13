@@ -103,6 +103,8 @@ VIEW_HTML = """<a class="back" href="/">&larr; Back</a>
 
 
 EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+THUMB_W = 120
+THUMB_H = 90
 
 
 class MemeGalleryHandler(BaseHTTPRequestHandler):
@@ -111,6 +113,34 @@ class MemeGalleryHandler(BaseHTTPRequestHandler):
     # Suppress default HTTP server logs
     def log_message(self, format: str, *args: object) -> None:
         pass
+
+    def _serve_thumb(self, path: Path) -> None:
+        from PIL import Image
+        import io
+
+        try:
+            img = Image.open(path)
+            # Create 120x90 transparent canvas (matching local _load_thumb)
+            canvas = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
+            img.thumbnail((THUMB_W, THUMB_H))
+            # Center image on canvas
+            x = (THUMB_W - img.width) // 2
+            y = (THUMB_H - img.height) // 2
+            if img.mode == "RGBA":
+                canvas.paste(img, (x, y), img)
+            else:
+                canvas.paste(img, (x, y))
+            buf = io.BytesIO()
+            canvas.save(buf, "PNG")
+            data = buf.getvalue()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=3600")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception:
+            self._serve_404()
 
     def _serve_file(self, path: Path) -> None:
         ext = path.suffix.lower()
@@ -199,6 +229,14 @@ class MemeGalleryHandler(BaseHTTPRequestHandler):
             filepath = MEMES_DIR / name
             if filepath.exists() and filepath.is_file():
                 self._serve_file(filepath)
+            else:
+                self._serve_404()
+
+        elif path.startswith("/thumb/"):
+            name = path[7:]
+            filepath = MEMES_DIR / name
+            if filepath.exists() and filepath.is_file():
+                self._serve_thumb(filepath)
             else:
                 self._serve_404()
 
