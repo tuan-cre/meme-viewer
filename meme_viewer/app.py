@@ -204,6 +204,7 @@ class MainWindow(QMainWindow):
         self._clipboard_modified = False
         self._preview_visible = False
         self._base_width = 400
+        self._saved_width = 400
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -307,16 +308,18 @@ class MainWindow(QMainWindow):
 
     def _apply_collapsed(self) -> None:
         self.preview.setMinimumWidth(0)
-        new_w = max(self.width() - PREVIEW_W, self._base_width)
+        new_w = max(self._saved_width, self._base_width)
         self._splitter.setSizes([new_w, 0])
         self.preview.setMaximumWidth(0)
         self.resize(new_w, self.height())
         self._preview_visible = False
 
     def _apply_expanded(self) -> None:
+        # Save current window width so collapse can restore it exactly
+        self._saved_width = self.width()
         # Grow the window width to make room — left panel stays fixed
         sizes = self._splitter.sizes()
-        left_width = sizes[0] if sizes else 330
+        left_width = sizes[0] if sizes else self._base_width
         new_w = self.width() + PREVIEW_W
         self.resize(new_w, self.height())
         self._splitter.setSizes([left_width, PREVIEW_W])
