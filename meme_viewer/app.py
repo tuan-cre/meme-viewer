@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
         self._splitter = splitter
 
         # Tab toggles between search bar and list (not individual items)
-        self.list_widget.setTabChangesFocus(True)
+        self.list_widget.setTabKeyNavigation(False)
         self.setTabOrder(self.search_bar, self.list_widget)
         self.setTabOrder(self.list_widget, self.search_bar)
 
