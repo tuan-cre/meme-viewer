@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
 
         # Restore collapsed state after _scan_dir (which selects row 0)
         self._apply_collapsed()
+        print(f"[debug] init: after _apply_collapsed width={self.width()} _saved_width={self._saved_width}")
 
     # ------------------------------------------------------------------
     # UI setup
@@ -309,18 +310,22 @@ class MainWindow(QMainWindow):
     def _apply_collapsed(self) -> None:
         self.preview.setMinimumWidth(0)
         new_w = max(self._saved_width, self._base_width)
+        print(f"[debug] collapse: _saved_width={self._saved_width} _base_width={self._base_width} new_w={new_w}")
         self._splitter.setSizes([new_w, 0])
         self.preview.setMaximumWidth(0)
         self.resize(new_w, self.height())
+        print(f"[debug] collapse: after resize width={self.width()}")
         self._preview_visible = False
 
     def _apply_expanded(self) -> None:
         # Save current window width so collapse can restore it exactly
         self._saved_width = self.width()
+        print(f"[debug] expand: saved_width set to {self._saved_width}")
         # Grow the window width to make room — left panel stays fixed
         sizes = self._splitter.sizes()
         left_width = sizes[0] if sizes else self._base_width
         new_w = self.width() + PREVIEW_W
+        print(f"[debug] expand: left_width={left_width} self.width()={self.width()} new_w={new_w}")
         self.resize(new_w, self.height())
         self._splitter.setSizes([left_width, PREVIEW_W])
         self.preview.setMinimumWidth(PREVIEW_W)
@@ -457,6 +462,7 @@ def main() -> None:
     geo = window.geometry()
     geo.moveCenter(screen.center())
     window.setGeometry(geo)
+    print(f"[debug] main: after setGeometry width={window.width()} frame={window.geometry().width()}")
     window.show()
     sys.exit(app.exec())
 
