@@ -5,6 +5,8 @@ import shutil
 import time
 from pathlib import Path
 
+from meme_viewer.server import MemeServer
+
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter, QImage
 from PyQt6.QtWidgets import (
@@ -109,6 +111,25 @@ QLineEdit#search_bar:focus {
     border-color: #b48ead;
 }
 
+QPushButton#mode_btn {
+    background-color: #0f0f18;
+    border: 1px solid #1a1423;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #5c5c6e;
+    font-size: 11px;
+    font-weight: 600;
+}
+QPushButton#mode_btn:hover {
+    border-color: #b48ead;
+    color: #c7a0c8;
+}
+QPushButton#mode_btn:checked {
+    background-color: #1a1423;
+    border-color: #b48ead;
+    color: #b48ead;
+}
+
 QLabel#placeholder {
     color: #5c5c6e;
     font-size: 18px;
@@ -202,6 +223,8 @@ class MainWindow(QMainWindow):
         self._base_width = 400
         self._saved_width = 400
         self._recents: dict[str, float] = self._load_recents()
+        self._server = MemeServer()
+        self._server_active = False
 
         self.list_widget = MemeList()
         self.preview = PreviewPanel()
@@ -220,8 +243,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self._build_searchbar()
-        layout.addWidget(self.search_bar)
+        layout.addWidget(self._build_searchbar())
         layout.addWidget(splitter)
         self.setCentralWidget(container)
         self._splitter = splitter
@@ -244,11 +266,28 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # UI setup
     # ------------------------------------------------------------------
-    def _build_searchbar(self) -> None:
+    def _build_searchbar(self) -> QWidget:
+        from PyQt6.QtWidgets import QHBoxLayout, QPushButton
+
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
         self.search_bar = QLineEdit()
         self.search_bar.setObjectName("search_bar")
         self.search_bar.setPlaceholderText("Search memes...")
         self.search_bar.textChanged.connect(self._filter_list)
+        layout.addWidget(self.search_bar, stretch=1)
+
+        self.mode_btn = QPushButton("Local")
+        self.mode_btn.setObjectName("mode_btn")
+        self.mode_btn.setCheckable(True)
+        self.mode_btn.setFixedWidth(80)
+        self.mode_btn.toggled.connect(self._toggle_mode)
+        layout.addWidget(self.mode_btn)
+
+        return container
 
     def _filter_list(self, text: str) -> None:
         for i in range(self.list_widget.count()):
@@ -364,6 +403,31 @@ class MainWindow(QMainWindow):
             self._apply_collapsed()
         else:
             self._apply_expanded()
+
+    # ------------------------------------------------------------------
+    # Server mode
+    # ------------------------------------------------------------------
+    def _toggle_mode(self, checked: bool) -> None:
+        if checked:
+            self._start_server()
+        else:
+            self._stop_server()
+
+    def _start_server(self) -> None:
+        url = self._server.start()
+        self._server_active = True
+        self.mode_btn.setText("Server")
+        self.mode_btn.setToolTip(url)
+        self.setWindowTitle(f"Meme Collection QL  [ {url} ]")
+        print(f"[server] started at {url}")
+
+    def _stop_server(self) -> None:
+        self._server.stop()
+        self._server_active = False
+        self.mode_btn.setText("Local")
+        self.mode_btn.setToolTip("")
+        self.setWindowTitle("Meme Collection QL")
+        print("[server] stopped")
 
     # ------------------------------------------------------------------
     # Recency tracking
@@ -501,6 +565,7 @@ class MainWindow(QMainWindow):
     # Events
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:
+        self._server.stop()
         self._clipboard_modified = False
         event.accept()
 
