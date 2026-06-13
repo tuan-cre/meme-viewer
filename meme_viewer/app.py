@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter
+from PyQt6.QtGui import QAction, QIcon, QPixmap, QKeySequence, QPainter, QImage
 from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -370,8 +370,9 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap(str(path))
             if not pixmap.isNull():
                 clipboard = QApplication.clipboard()
-                clipboard.setPixmap(pixmap)
+                clipboard.setImage(pixmap.toImage())
                 self._clipboard_modified = True
+                self._copied_pixmap = pixmap
         QTimer.singleShot(0, QApplication.quit)
 
     def _copy_meme(self) -> None:
@@ -384,6 +385,7 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setPixmap(pixmap)
         self._clipboard_modified = True
+        self._copied_pixmap = pixmap
 
     def _trash_meme(self) -> None:
         path = self._selected_path()
