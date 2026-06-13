@@ -242,10 +242,16 @@ class MainWindow(QMainWindow):
 
         self._build_shortcuts()
         self._build_context_menu()
-        self._scan_dir()
+
+        if self._remote_url:
+            # Auto-connect to saved remote server after event loop starts
+            QTimer.singleShot(0, lambda: self._connect_remote(self._remote_url))
+        else:
+            self._scan_dir()
 
         # Restore collapsed state after _scan_dir (which selects row 0)
-        self._apply_collapsed()
+        if not self._remote_url:
+            self._apply_collapsed()
         print(f"[debug] init: after _apply_collapsed width={self.width()} _saved_width={self._saved_width}")
 
     # ------------------------------------------------------------------
