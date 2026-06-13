@@ -695,11 +695,18 @@ class MainWindow(QMainWindow):
         new_name = new_name.strip()
         if new_name == path.name:
             return
+        # Auto-add original extension if no valid image extension given
+        if not any(new_name.lower().endswith(ext) for ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}):
+            new_name += path.suffix
         new_path = path.with_name(new_name)
         if new_path.exists() and new_path != path:
             QMessageBox.warning(self, "Rename Failed", "A file with that name already exists.")
             return
-        path.rename(new_path)
+        try:
+            path.rename(new_path)
+        except OSError as e:
+            QMessageBox.warning(self, "Rename Failed", f"Could not rename file:\n{e}")
+            return
         self._scan_dir()
 
     def _open_full(self) -> None:
