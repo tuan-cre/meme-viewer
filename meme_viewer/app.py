@@ -112,25 +112,6 @@ QLineEdit#search_bar:focus {
     border-color: #b48ead;
 }
 
-QPushButton#mode_btn {
-    background-color: #0f0f18;
-    border: 1px solid #1a1423;
-    border-radius: 6px;
-    padding: 6px 10px;
-    color: #5c5c6e;
-    font-size: 11px;
-    font-weight: 600;
-}
-QPushButton#mode_btn:hover {
-    border-color: #b48ead;
-    color: #c7a0c8;
-}
-QPushButton#mode_btn:checked {
-    background-color: #1a1423;
-    border-color: #b48ead;
-    color: #b48ead;
-}
-
 QLabel#placeholder {
     color: #5c5c6e;
     font-size: 18px;
@@ -246,7 +227,8 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._build_searchbar())
+        self._build_searchbar()
+        layout.addWidget(self.search_bar)
         layout.addWidget(splitter)
         self.setCentralWidget(container)
         self._splitter = splitter
@@ -269,28 +251,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # UI setup
     # ------------------------------------------------------------------
-    def _build_searchbar(self) -> QWidget:
-        from PyQt6.QtWidgets import QHBoxLayout, QPushButton
-
-        container = QWidget()
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
+    def _build_searchbar(self) -> None:
         self.search_bar = QLineEdit()
         self.search_bar.setObjectName("search_bar")
         self.search_bar.setPlaceholderText("Search memes...")
         self.search_bar.textChanged.connect(self._filter_list)
-        layout.addWidget(self.search_bar, stretch=1)
-
-        self.mode_btn = QPushButton("Local")
-        self.mode_btn.setObjectName("mode_btn")
-        self.mode_btn.setCheckable(True)
-        self.mode_btn.setFixedWidth(80)
-        self.mode_btn.toggled.connect(self._toggle_mode)
-        layout.addWidget(self.mode_btn)
-
-        return container
 
     def _filter_list(self, text: str) -> None:
         for i in range(self.list_widget.count()):
@@ -323,6 +288,11 @@ class MainWindow(QMainWindow):
         act = QAction("Refresh", self)
         act.setShortcut(QKeySequence.StandardKey.Refresh)
         act.triggered.connect(self._refresh)
+        self.addAction(act)
+
+        act = QAction("Server Mode", self)
+        act.setShortcut(QKeySequence("Ctrl+S"))
+        act.triggered.connect(self._toggle_mode)
         self.addAction(act)
 
         del act
@@ -438,25 +408,20 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
-    def _toggle_mode(self, checked: bool) -> None:
-        if checked:
-            url = self._remote_url
-            if not url:
-                url, ok = QInputDialog.getText(
-                    self,
-                    "Connect to Server",
-                    "Enter meme-serve URL (e.g. http://192.168.1.68:8765):",
-                    text=url,
-                )
-                if not ok or not url.strip():
-                    self.mode_btn.setChecked(False)
-                    return
-                url = url.strip().rstrip("/")
-                self._remote_url = url
-                self._save_server_url(url)
-            self._connect_remote(url)
-        else:
+    def _toggle_mode(self) -> None:
+        if self._remote_url:
             self._disconnect_remote()
+        else:
+            url, ok = QInputDialog.getText(
+                self,
+                "Connect to Server",
+                "Enter meme-serve URL (e.g. http://192.168.1.68:8765):",
+                text=self._load_server_url(),
+            )
+            if not ok or not url or not url.strip():
+                return
+            url = url.strip().rstrip("/")
+            self._connect_remote(url)
 
     def _connect_remote(self, url: str) -> None:
         """Fetch remote meme list and switch to remote mode."""
@@ -465,7 +430,6 @@ class MainWindow(QMainWindow):
             names: list[str] = json.loads(resp.read().decode())
         except Exception as e:
             QMessageBox.warning(self, "Connection Failed", f"Could not fetch memes:\n{e}")
-            self.mode_btn.setChecked(False)
             return
 
         self._remote_url = url
@@ -480,16 +444,12 @@ class MainWindow(QMainWindow):
         else:
             self.preview.clear_preview()
 
-        self.mode_btn.setText("Server")
-        self.mode_btn.setToolTip(url)
         self.setWindowTitle(f"Meme Collection QL  [ {url} ]")
         print(f"[remote] connected to {url} ({len(names)} memes)")
 
     def _disconnect_remote(self) -> None:
         """Switch back to local mode."""
         self._remote_url = ""
-        self.mode_btn.setText("Local")
-        self.mode_btn.setToolTip("")
         self.setWindowTitle("Meme Collection QL")
         self._scan_dir()
         print("[remote] disconnected")
