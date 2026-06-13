@@ -159,7 +159,7 @@ class MemeList(QListWidget):
         self.setIconSize(QSize(THUMB_W, THUMB_H))
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.setWordWrap(False)
-        self.setTextElideMode(Qt.ElideRight)
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.setSpacing(1)
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
 
