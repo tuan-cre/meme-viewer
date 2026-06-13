@@ -1,0 +1,2 @@
+[console_scripts]
+meme-viewer = meme_viewer.app:main

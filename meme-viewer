@@ -1,0 +1,4 @@
+#!/bin/bash
+# meme-viewer — PyQt6 GUI for browsing meme collections
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec python3 -m meme_viewer "$@"
