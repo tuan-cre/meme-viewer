@@ -184,7 +184,7 @@ class PreviewPanel(QScrollArea):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+        Qt.TransformationMode.FastTransformation,
             )
             self._label.setPixmap(scaled)
         else:
