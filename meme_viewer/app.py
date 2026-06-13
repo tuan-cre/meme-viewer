@@ -308,9 +308,9 @@ class MainWindow(QMainWindow):
     def _apply_collapsed(self) -> None:
         self.preview.setMinimumWidth(0)
         new_w = max(self.width() - PREVIEW_W, self._base_width)
-        self.resize(new_w, self.height())
-        self._splitter.setSizes([self._splitter.width(), 0])
+        self._splitter.setSizes([new_w, 0])
         self.preview.setMaximumWidth(0)
+        self.resize(new_w, self.height())
         self._preview_visible = False
 
     def _apply_expanded(self) -> None:
