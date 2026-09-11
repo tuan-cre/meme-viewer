@@ -18,17 +18,21 @@ irm astral.sh/uv/install.ps1 | iex
 
 ```sh
 uv tool install .
-meme-viewer            # opens your local collection in the browser
+meme-viewer            # native window (Dear PyGui, no browser)
 ```
 
 No setup: memes live in `platformdirs.user_data_dir("memes")`
 (`~/.local/share/memes` on Linux, `%LOCALAPPDATA%\memes` on Windows).
-The localhost server is just plumbing — it binds `127.0.0.1`, never exposed.
+
+Copy needs a clipboard helper on Linux: `wl-copy` (Wayland) or `xclip`
+(X11). Without one, the file path is copied instead.
 
 Run without installing:
 ```sh
 uv run --frozen meme-viewer
 ```
+
+Browser fallback: `meme-web` (same collection via localhost).
 
 ## Bonus: share on the LAN (optional)
 

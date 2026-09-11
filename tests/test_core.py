@@ -66,3 +66,17 @@ def test_list_memes_sorted_and_filtered(memes):
     _png(memes / "a.jpg")
     (memes / "note.txt").write_text("nope")
     assert core.list_memes() == ["a.jpg", "b.png"]
+
+
+def test_add_files_copies_and_dedupes(memes, tmp_path):
+    from pathlib import Path
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "x.png").write_bytes(b"img")
+    (src / "skip.txt").write_text("nope")
+    assert core.add_files([src / "x.png", src / "skip.txt"]) == 1
+    assert (memes / "x.png").exists()
+    assert core.add_files([src / "x.png"]) == 1  # dedupes to x_1.png
+    assert (memes / "x_1.png").exists()
+    assert core.add_files([Path("/nonexistent.png")]) == 0
