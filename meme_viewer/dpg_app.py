@@ -18,7 +18,9 @@ from . import core
 
 THUMB = (120, 90)
 PREVIEW_MAX = (680, 600)
-COLS = 3
+CELL_W = THUMB[0] + 16  # thumb + padding
+COMPACT_W = 460
+FULL_W = 1180
 
 
 # --------------------------------------------------------------------------
@@ -113,6 +115,9 @@ class Gallery:
         self.names: list[str] = []
         self.selected: str | None = None
         self.query = ""
+        self.cols = 3
+        self.compact = False
+        self.full_w = FULL_W
 
     def visible(self) -> list[str]:
         if not self.query:
@@ -124,8 +129,21 @@ class Gallery:
         self.names = core.list_memes()
         if self.selected not in self.names:
             self.selected = self.names[0] if self.names else None
+        self._fit_cols()
         build_grid(self)
         show_preview(self)
+
+    def _fit_cols(self) -> bool:
+        """Recompute column count from grid width. Returns True if changed."""
+        try:
+            w = dpg.get_item_rect_size("grid")[0]
+        except Exception:
+            return False
+        cols = max(1, min(6, int(w // CELL_W))) if w > 0 else self.cols
+        if cols != self.cols:
+            self.cols = cols
+            return True
+        return False
 
 
 G = Gallery()
@@ -144,7 +162,7 @@ def build_grid(g: Gallery) -> None:
         return
     row = None
     for i, name in enumerate(items):
-        if i % COLS == 0:
+        if i % g.cols == 0:
             row = dpg.add_group(horizontal=True, parent="grid")
         cell = dpg.add_group(horizontal=False, parent=row)
         path = core.resolve(name)
@@ -241,6 +259,53 @@ def on_search(_s, text: str) -> None:
     build_grid(G)
 
 
+def on_viewport_resize() -> None:
+    if G._fit_cols():
+        build_grid(G)
+
+
+def set_compact(on: bool) -> None:
+    G.compact = on
+    if on:
+        G.full_w = dpg.get_viewport_width()
+        dpg.hide_item("right_col")
+        dpg.set_viewport_width(COMPACT_W)
+        dpg.set_viewport_title("Meme Launcher")
+    else:
+        dpg.show_item("right_col")
+        dpg.set_viewport_width(max(G.full_w, FULL_W - 200))
+        dpg.set_viewport_title("Meme Viewer")
+    G._fit_cols()
+    build_grid(G)
+
+
+def toggle_compact() -> None:
+    set_compact(not G.compact)
+
+
+def copy_and_quit() -> None:
+    items = G.visible()
+    if G.selected not in items:
+        G.selected = items[0] if items else None
+    do_copy()
+    dpg.stop_dearpygui()
+
+
+def quit() -> None:
+    for win in ("rename_win", "trash_win"):
+        if dpg.is_item_shown(win):
+            dpg.hide_item(win)
+            return
+    dpg.stop_dearpygui()
+
+
+def search_focused() -> bool:
+    try:
+        return dpg.is_item_focused("search")
+    except Exception:
+        return False
+
+
 def on_key_delete() -> None:
     if G.selected:
         dpg.show_item("trash_win")
@@ -249,6 +314,24 @@ def on_key_delete() -> None:
 def on_key_c() -> None:
     if dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_LSuper):
         do_copy()
+
+
+def on_key_enter() -> None:
+    if search_focused():
+        items = G.visible()
+        if items:
+            G.selected = items[0]
+            show_preview(G)
+    copy_and_quit()
+
+
+def on_key_escape() -> None:
+    quit()
+
+
+def on_key_e() -> None:
+    if dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_LSuper):
+        toggle_compact()
 
 
 # --------------------------------------------------------------------------
@@ -276,10 +359,11 @@ def build_ui() -> None:
         with dpg.group(horizontal=True):
             dpg.add_button(label="+ Add", callback=lambda: dpg.show_item("add_dialog"))
             dpg.add_button(label="Refresh", callback=lambda: G.refresh())
+            dpg.add_button(label="Compact", callback=toggle_compact)
         with dpg.group(horizontal=True):
             with dpg.child_window(tag="grid", width=440, height=-30):
                 pass
-            with dpg.group():
+            with dpg.group(tag="right_col"):
                 with dpg.child_window(tag="preview_img", width=-1, height=-60):
                     pass
                 with dpg.group(tag="preview_bar"):
@@ -318,16 +402,30 @@ def build_ui() -> None:
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=on_key_delete)
         dpg.add_key_press_handler(dpg.mvKey_C, callback=on_key_c)
+        dpg.add_key_press_handler(dpg.mvKey_Return, callback=on_key_enter)
+        dpg.add_key_press_handler(dpg.mvKey_Escape, callback=on_key_escape)
+        dpg.add_key_press_handler(dpg.mvKey_E, callback=on_key_e)
 
     dpg.set_primary_window("main", True)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    p = argparse.ArgumentParser(description="Meme Viewer — native window.")
+    p.add_argument("--compact", action="store_true", help="Launcher mode (narrow, no preview)")
+    p.add_argument("--width", type=int, default=FULL_W)
+    p.add_argument("--height", type=int, default=780)
+    args = p.parse_args(argv)
+
     dpg.create_context()
-    dpg.create_viewport(title="Meme Viewer", width=1180, height=780)
+    dpg.create_viewport(title="Meme Viewer", width=args.width, height=args.height)
     apply_theme()
     build_ui()
     G.refresh()
+    dpg.set_viewport_resize_callback(on_viewport_resize)
+    if args.compact or args.width <= COMPACT_W + 40:
+        set_compact(True)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.start_dearpygui()
