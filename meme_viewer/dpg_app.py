@@ -358,44 +358,11 @@ def do_rename() -> None:
     G.refresh()
 
 
-_add_expanded = False
-
-
-def show_add() -> None:
-    """Open the file dialog. Grows the window first so it isn't trapped
-    inside the small compact viewport; restored on dialog close."""
-    global _add_expanded
-    _add_expanded = False
-    if G.compact:
-        try:
-            dpg.set_viewport_width(720)
-            dpg.set_viewport_height(560)
-            center_viewport()
-            _add_expanded = True
-        except Exception:
-            pass
-    dpg.show_item("add_dialog")
-
-
 def on_add_dialog(_s, app_data) -> None:
-    global _add_expanded
-    try:
-        paths = [Path(p) for p in app_data.get("selections", {}).values()]
-        n = core.add_files(paths)
-        status(f"Added {n} file(s)" if n else "Nothing added")
-    finally:
-        if _add_expanded:
-            _add_expanded = False
-            try:
-                dpg.set_viewport_width(COMPACT_W)
-                G._fit_cols()
-                build_grid(G)
-                fit_compact_height()
-                center_viewport()
-            except Exception:
-                pass
-        else:
-            G.refresh()
+    paths = [Path(p) for p in app_data.get("selections", {}).values()]
+    n = core.add_files(paths)
+    status(f"Added {n} file(s)" if n else "Nothing added")
+    G.refresh()
 
 
 def on_search(_s, text: str) -> None:
@@ -524,7 +491,7 @@ def build_ui() -> None:
             tag="search", hint="Search memes...", callback=on_search, width=-1
         )
         with dpg.group(horizontal=True):
-            dpg.add_button(label="+ Add", callback=lambda: show_add())
+            dpg.add_button(label="+ Add", callback=lambda: dpg.show_item("add_dialog"))
             dpg.add_button(label="Refresh", callback=lambda: G.refresh())
             dpg.add_button(tag="mode_btn", label="Compact", callback=toggle_compact)
         with dpg.group(horizontal=True):
@@ -538,7 +505,7 @@ def build_ui() -> None:
         dpg.add_text("", tag="status")
 
     with dpg.file_dialog(
-        tag="add_dialog", show=False, modal=True, width=600, height=400,
+        tag="add_dialog", show=False, modal=True, width=430, height=360,
         callback=on_add_dialog,
     ):
         for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
