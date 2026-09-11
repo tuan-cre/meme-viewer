@@ -24,3 +24,6 @@ include = ["meme_viewer*"]
 
 [tool.setuptools.package-data]
 meme_viewer = ["static/*"]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
