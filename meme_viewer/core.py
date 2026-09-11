@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import json
+import time
 from pathlib import Path
 
 import platformdirs
@@ -24,13 +26,39 @@ def trash_dir() -> Path:
     return d
 
 
+def _recent_file() -> Path:
+    return memes_dir() / ".recent.json"
+
+
+def load_recents() -> dict[str, float]:
+    try:
+        data = json.loads(_recent_file().read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def mark_used(name: str) -> None:
+    """Record a use (copy/open) so future listings sort it first."""
+    try:
+        recents = load_recents()
+        recents[name] = time.time()
+        _recent_file().write_text(json.dumps(recents))
+    except OSError:
+        pass
+
+
 def list_memes() -> list[str]:
     d = memes_dir()
     if not d.exists():
         return []
-    return sorted(
+    names = sorted(
         p.name for p in d.iterdir() if p.is_file() and p.suffix.lower() in EXTS
     )
+    # Most recently used first; never-used keep alphabetical order at the end
+    recents = load_recents()
+    names.sort(key=lambda n: recents.get(n, 0), reverse=True)
+    return names
 
 
 def resolve(name: str) -> Path | None:

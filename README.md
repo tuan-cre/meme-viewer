@@ -32,9 +32,10 @@ Run without installing:
 uv run --frozen meme-viewer
 ```
 
-Launcher mode (narrow, like the old 400px Qt window): `meme-viewer --compact`.
-Type to filter, `Enter` copies the top match and quits, `Esc` quits,
-`Ctrl+E` toggles preview. The grid reflows its columns as you resize.
+Launcher mode is the default (narrow, no preview): type to filter, click or
+`Enter` copies and quits, `Esc` quits, `Ctrl+E` or the Expand button shows
+the preview pane. The grid reflows its columns as you resize. Mode is
+remembered; `meme-viewer --full` forces full mode once.
 
 Browser fallback: `meme-web` (same collection via localhost).
 

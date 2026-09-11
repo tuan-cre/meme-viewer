@@ -248,14 +248,17 @@ def show_preview(g: Gallery) -> None:
     with dpg.group(horizontal=True, parent="preview_bar"):
         dpg.add_text(g.selected)
         dpg.add_button(label="Copy", callback=lambda: do_copy())
-        dpg.add_button(label="Open", callback=lambda: open_file(path))
+        dpg.add_button(label="Open", callback=lambda: do_open())
         dpg.add_button(label="Rename", callback=lambda: dpg.show_item("rename_win"))
         dpg.add_button(label="Trash", callback=lambda: dpg.show_item("trash_win"))
 
 
 def select(name: str) -> None:
     G.selected = name
-    show_preview(G)
+    if G.compact:
+        copy_and_quit()  # launcher: click = copy + close
+    else:
+        show_preview(G)
 
 
 # --------------------------------------------------------------------------
@@ -271,6 +274,17 @@ def do_copy() -> None:
         status(f"Copied {G.selected}")
     else:
         status(f"Clipboard tool missing — path copied: {G.selected}")
+    core.mark_used(G.selected)
+
+
+def do_open() -> None:
+    if not G.selected:
+        return
+    path = core.resolve(G.selected)
+    if path is None:
+        return
+    open_file(path)
+    core.mark_used(G.selected)
 
 
 def do_trash() -> None:
@@ -328,20 +342,22 @@ def fit_compact_height() -> None:
 def set_compact(on: bool) -> None:
     G.compact = on
     save_config(on)
-    if on:
-        G.full_w = dpg.get_viewport_width()
-        try:
+    if dpg.does_item_exist("mode_btn"):
+        dpg.set_item_label("mode_btn", "Expand" if on else "Compact")
+    try:
+        if on:
+            G.full_w = dpg.get_viewport_width()
             G.full_h = dpg.get_viewport_height()
-        except Exception:
-            pass
-        dpg.hide_item("right_col")
-        dpg.set_viewport_width(COMPACT_W)
-        dpg.set_viewport_title("Meme Launcher")
-    else:
-        dpg.show_item("right_col")
-        dpg.set_viewport_width(max(G.full_w, FULL_W - 200))
-        dpg.set_viewport_height(G.full_h)
-        dpg.set_viewport_title("Meme Viewer")
+            dpg.hide_item("right_col")
+            dpg.set_viewport_width(COMPACT_W)
+            dpg.set_viewport_title("Meme Launcher")
+        else:
+            dpg.show_item("right_col")
+            dpg.set_viewport_width(max(G.full_w, FULL_W - 200))
+            dpg.set_viewport_height(G.full_h)
+            dpg.set_viewport_title("Meme Viewer")
+    except Exception:
+        pass  # no live viewport (e.g. headless test)
     G._fit_cols()
     build_grid(G)
     if on:
@@ -429,7 +445,7 @@ def build_ui() -> None:
         with dpg.group(horizontal=True):
             dpg.add_button(label="+ Add", callback=lambda: dpg.show_item("add_dialog"))
             dpg.add_button(label="Refresh", callback=lambda: G.refresh())
-            dpg.add_button(label="Compact", callback=toggle_compact)
+            dpg.add_button(tag="mode_btn", label="Compact", callback=toggle_compact)
         with dpg.group(horizontal=True):
             with dpg.child_window(tag="grid", width=440, height=-30):
                 pass
@@ -489,8 +505,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--height", type=int, default=780)
     args = p.parse_args(argv)
 
-    saved_compact = bool(load_config().get("compact", False))
-    want_compact = args.compact or (saved_compact and not args.full)
+    saved = load_config().get("compact", None)
+    if args.compact:
+        want_compact = True
+    elif args.full:
+        want_compact = False
+    elif saved is None:
+        want_compact = True  # default: launcher-first
+    else:
+        want_compact = bool(saved)
 
     dpg.create_context()
     dpg.create_viewport(title="Meme Viewer", width=args.width, height=args.height)

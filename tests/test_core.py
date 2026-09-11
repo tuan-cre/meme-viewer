@@ -80,3 +80,13 @@ def test_add_files_copies_and_dedupes(memes, tmp_path):
     assert core.add_files([src / "x.png"]) == 1  # dedupes to x_1.png
     assert (memes / "x_1.png").exists()
     assert core.add_files([Path("/nonexistent.png")]) == 0
+
+
+def test_recent_use_sorts_first(memes):
+    for n in ("a.png", "b.png", "c.png"):
+        (memes / n).write_bytes(b"x")
+    assert core.list_memes() == ["a.png", "b.png", "c.png"]
+    core.mark_used("c.png")
+    assert core.list_memes()[0] == "c.png"
+    core.mark_used("b.png")
+    assert core.list_memes()[:2] == ["b.png", "c.png"]
