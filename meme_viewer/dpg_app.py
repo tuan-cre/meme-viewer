@@ -102,18 +102,21 @@ def copy_image_to_clipboard(path: Path) -> bool:
 
 def _copy_linux(path: Path) -> bool:
     data = path.read_bytes()
-    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
-        p = subprocess.run(
-            ["wl-copy", "--type", "image/png"], input=data, capture_output=True
-        )
-        return p.returncode == 0
-    if shutil.which("xclip"):
-        p = subprocess.run(
-            ["xclip", "-selection", "clipboard", "-t", "image/png", "-i"],
-            input=data,
-            capture_output=True,
-        )
-        return p.returncode == 0
+    try:
+        if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+            p = subprocess.run(
+                ["wl-copy", "--type", "image/png"],
+                input=data, capture_output=True, timeout=10,
+            )
+            return p.returncode == 0
+        if shutil.which("xclip"):
+            p = subprocess.run(
+                ["xclip", "-selection", "clipboard", "-t", "image/png", "-i"],
+                input=data, capture_output=True, timeout=10,
+            )
+            return p.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
     return False
 
 
@@ -166,6 +169,7 @@ class Gallery:
         self.compact = False
         self.full_w = FULL_W
         self.full_h = FULL_H
+        self.debug = False
 
     def visible(self) -> list[str]:
         if not self.query:
@@ -178,8 +182,7 @@ class Gallery:
         if self.selected not in self.names:
             self.selected = self.names[0] if self.names else None
         self._fit_cols()
-        build_grid(self)
-        show_preview(self)
+        build_grid(self)  # rebuilds thumbs + preview
         if self.compact:
             fit_compact_height()
 
@@ -199,6 +202,19 @@ class Gallery:
 G = Gallery()
 
 
+def debug_log(msg: str) -> None:
+    if not G.debug:
+        return
+    try:
+        from datetime import datetime
+
+        p = _config_path().parent / "debug.log"
+        with open(p, "a") as f:
+            f.write(f"{datetime.now():%H:%M:%S} {msg}\n")
+    except OSError:
+        pass
+
+
 def status(msg: str) -> None:
     if dpg.does_item_exist("status"):
         dpg.set_value("status", msg)
@@ -206,9 +222,14 @@ def status(msg: str) -> None:
 
 def build_grid(g: Gallery) -> None:
     dpg.delete_item("grid", children_only=True)
+    try:
+        dpg.delete_item("texreg", children_only=True)  # drop stale textures
+    except Exception:
+        pass
     items = g.visible()
     if not items:
         dpg.add_text("No memes — press Add.", parent="grid")
+        show_preview(g)
         return
     row = None
     for i, name in enumerate(items):
@@ -223,15 +244,22 @@ def build_grid(g: Gallery) -> None:
                 tex, width=THUMB[0], height=THUMB[1], parent=cell,
                 callback=lambda s, a, u=name: select(u),
             )
-        except Exception:
+        except Exception as e:
+            debug_log(f"thumb {name}: {e!r}")
             dpg.add_text("[bad image]", parent=cell)
         label = name if len(name) <= 20 else name[:19] + "…"
         dpg.add_text(label, parent=cell)
+    show_preview(g)
 
 
 def show_preview(g: Gallery) -> None:
     dpg.delete_item("preview_img", children_only=True)
     dpg.delete_item("preview_bar", children_only=True)
+    try:
+        if dpg.does_item_exist("preview_tex"):
+            dpg.delete_item("preview_tex")
+    except Exception:
+        pass
     if not g.selected:
         dpg.add_text("Select a meme", parent="preview_img")
         return
@@ -240,9 +268,10 @@ def show_preview(g: Gallery) -> None:
         return
     try:
         w, h, data = _tex_data(_pil_rgba(path, PREVIEW_MAX))
-        tex = dpg.add_static_texture(w, h, data, parent="texreg")
+        tex = dpg.add_static_texture(w, h, data, tag="preview_tex", parent="texreg")
         dpg.add_image(tex, width=w, height=h, parent="preview_img")
-    except Exception:
+    except Exception as e:
+        debug_log(f"preview {g.selected}: {e!r}")
         dpg.add_text("Failed to load image", parent="preview_img")
         return
     with dpg.group(horizontal=True, parent="preview_bar"):
@@ -254,6 +283,7 @@ def show_preview(g: Gallery) -> None:
 
 
 def select(name: str) -> None:
+    debug_log(f"click {name} (compact={G.compact})")
     G.selected = name
     if G.compact:
         copy_and_quit()  # launcher: click = copy + close
@@ -266,11 +296,21 @@ def select(name: str) -> None:
 # --------------------------------------------------------------------------
 def do_copy() -> None:
     if not G.selected:
+        debug_log("copy: nothing selected")
+        status("Nothing selected")
         return
     path = core.resolve(G.selected)
     if path is None:
+        status(f"Copy failed: {G.selected} not found")
         return
-    if copy_image_to_clipboard(path):
+    try:
+        ok = copy_image_to_clipboard(path)
+    except Exception as e:
+        debug_log(f"copy {G.selected}: EXC {e!r}")
+        status(f"Copy failed: {e}")
+        return
+    debug_log(f"copy {G.selected}: {'image' if ok else 'path-fallback'}")
+    if ok:
         status(f"Copied {G.selected}")
     else:
         status(f"Clipboard tool missing — path copied: {G.selected}")
@@ -311,11 +351,44 @@ def do_rename() -> None:
     G.refresh()
 
 
+_add_expanded = False
+
+
+def show_add() -> None:
+    """Open the file dialog. Grows the window first so it isn't trapped
+    inside the small compact viewport; restored on dialog close."""
+    global _add_expanded
+    _add_expanded = False
+    if G.compact:
+        try:
+            dpg.set_viewport_width(720)
+            dpg.set_viewport_height(560)
+            center_viewport()
+            _add_expanded = True
+        except Exception:
+            pass
+    dpg.show_item("add_dialog")
+
+
 def on_add_dialog(_s, app_data) -> None:
-    paths = [Path(p) for p in app_data.get("selections", {}).values()]
-    n = core.add_files(paths)
-    status(f"Added {n} file(s)" if n else "Nothing added")
-    G.refresh()
+    global _add_expanded
+    try:
+        paths = [Path(p) for p in app_data.get("selections", {}).values()]
+        n = core.add_files(paths)
+        status(f"Added {n} file(s)" if n else "Nothing added")
+    finally:
+        if _add_expanded:
+            _add_expanded = False
+            try:
+                dpg.set_viewport_width(COMPACT_W)
+                G._fit_cols()
+                build_grid(G)
+                fit_compact_height()
+                center_viewport()
+            except Exception:
+                pass
+        else:
+            G.refresh()
 
 
 def on_search(_s, text: str) -> None:
@@ -443,7 +516,7 @@ def build_ui() -> None:
             tag="search", hint="Search memes...", callback=on_search, width=-1
         )
         with dpg.group(horizontal=True):
-            dpg.add_button(label="+ Add", callback=lambda: dpg.show_item("add_dialog"))
+            dpg.add_button(label="+ Add", callback=lambda: show_add())
             dpg.add_button(label="Refresh", callback=lambda: G.refresh())
             dpg.add_button(tag="mode_btn", label="Compact", callback=toggle_compact)
         with dpg.group(horizontal=True):
@@ -501,9 +574,11 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="Meme Viewer — native window.")
     p.add_argument("--compact", action="store_true", help="Launcher mode (narrow, no preview)")
     p.add_argument("--full", action="store_true", help="Force full mode (overrides saved compact)")
+    p.add_argument("--debug", action="store_true", help="Log UI events to <config>/debug.log")
     p.add_argument("--width", type=int, default=FULL_W)
     p.add_argument("--height", type=int, default=780)
     args = p.parse_args(argv)
+    G.debug = args.debug
 
     saved = load_config().get("compact", None)
     if args.compact:
