@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import dearpygui.dearpygui as dpg
+import platformdirs
 from PIL import Image
 
 from . import core
@@ -19,8 +20,54 @@ from . import core
 THUMB = (120, 90)
 PREVIEW_MAX = (680, 600)
 CELL_W = THUMB[0] + 16  # thumb + padding
+CELL_H = THUMB[1] + 42  # thumb + label + spacing
+CHROME_H = 150  # search + buttons + status + margins
 COMPACT_W = 460
 FULL_W = 1180
+FULL_H = 780
+
+
+def _config_path() -> Path:
+    d = Path(platformdirs.user_config_dir("meme-viewer"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "window.json"
+
+
+def load_config() -> dict:
+    import json
+
+    try:
+        data = json.loads(_config_path().read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(compact: bool) -> None:
+    import json
+
+    try:
+        _config_path().write_text(json.dumps({"compact": compact}))
+    except OSError:
+        pass
+
+
+def center_viewport() -> None:
+    """Center the window using the real screen size. No-op if undetectable."""
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return
+    try:
+        w, h = dpg.get_viewport_width(), dpg.get_viewport_height()
+        dpg.set_viewport_pos([max(0, (sw - w) // 2), max(0, (sh - h) // 2)])
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -118,6 +165,7 @@ class Gallery:
         self.cols = 3
         self.compact = False
         self.full_w = FULL_W
+        self.full_h = FULL_H
 
     def visible(self) -> list[str]:
         if not self.query:
@@ -132,6 +180,8 @@ class Gallery:
         self._fit_cols()
         build_grid(self)
         show_preview(self)
+        if self.compact:
+            fit_compact_height()
 
     def _fit_cols(self) -> bool:
         """Recompute column count from grid width. Returns True if changed."""
@@ -257,6 +307,8 @@ def on_add_dialog(_s, app_data) -> None:
 def on_search(_s, text: str) -> None:
     G.query = text
     build_grid(G)
+    if G.compact:
+        fit_compact_height()
 
 
 def on_viewport_resize() -> None:
@@ -264,19 +316,37 @@ def on_viewport_resize() -> None:
         build_grid(G)
 
 
+def fit_compact_height() -> None:
+    """Shrink the window to fit grid content — no dead gap at the bottom."""
+    try:
+        rows = max(1, -(-len(G.visible()) // max(1, G.cols)))
+        dpg.set_viewport_height(max(280, min(900, CHROME_H + rows * CELL_H)))
+    except Exception:
+        pass
+
+
 def set_compact(on: bool) -> None:
     G.compact = on
+    save_config(on)
     if on:
         G.full_w = dpg.get_viewport_width()
+        try:
+            G.full_h = dpg.get_viewport_height()
+        except Exception:
+            pass
         dpg.hide_item("right_col")
         dpg.set_viewport_width(COMPACT_W)
         dpg.set_viewport_title("Meme Launcher")
     else:
         dpg.show_item("right_col")
         dpg.set_viewport_width(max(G.full_w, FULL_W - 200))
+        dpg.set_viewport_height(G.full_h)
         dpg.set_viewport_title("Meme Viewer")
     G._fit_cols()
     build_grid(G)
+    if on:
+        fit_compact_height()
+    center_viewport()
 
 
 def toggle_compact() -> None:
@@ -414,9 +484,13 @@ def main(argv: list[str] | None = None) -> None:
 
     p = argparse.ArgumentParser(description="Meme Viewer — native window.")
     p.add_argument("--compact", action="store_true", help="Launcher mode (narrow, no preview)")
+    p.add_argument("--full", action="store_true", help="Force full mode (overrides saved compact)")
     p.add_argument("--width", type=int, default=FULL_W)
     p.add_argument("--height", type=int, default=780)
     args = p.parse_args(argv)
+
+    saved_compact = bool(load_config().get("compact", False))
+    want_compact = args.compact or (saved_compact and not args.full)
 
     dpg.create_context()
     dpg.create_viewport(title="Meme Viewer", width=args.width, height=args.height)
@@ -424,8 +498,9 @@ def main(argv: list[str] | None = None) -> None:
     build_ui()
     G.refresh()
     dpg.set_viewport_resize_callback(on_viewport_resize)
-    if args.compact or args.width <= COMPACT_W + 40:
+    if want_compact or args.width <= COMPACT_W + 40:
         set_compact(True)
+    center_viewport()
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.start_dearpygui()
