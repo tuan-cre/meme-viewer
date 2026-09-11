@@ -242,7 +242,7 @@ def build_grid(g: Gallery) -> None:
             tex = dpg.add_static_texture(w, h, data, parent="texreg")
             dpg.add_image_button(
                 tex, width=THUMB[0], height=THUMB[1], parent=cell,
-                callback=lambda s, a, u=name: select(u),
+                user_data=name, callback=lambda s, a, u: select(u),
             )
         except Exception as e:
             debug_log(f"thumb {name}: {e!r}")
@@ -251,7 +251,7 @@ def build_grid(g: Gallery) -> None:
         dpg.add_selectable(
             label=label, default_value=(name == g.selected),
             width=THUMB[0], parent=cell,
-            callback=lambda s, a, u=name: select(u),
+            user_data=name, callback=lambda s, a, u: select(u),
         )
     show_preview(g)
 
@@ -286,7 +286,10 @@ def show_preview(g: Gallery) -> None:
         dpg.add_button(label="Trash", callback=lambda: dpg.show_item("trash_win"))
 
 
-def select(name: str) -> None:
+def select(name: str | None) -> None:
+    if not name:
+        debug_log("select: empty name ignored")
+        return
     debug_log(f"click {name} (compact={G.compact})")
     G.selected = name
     if G.compact:
