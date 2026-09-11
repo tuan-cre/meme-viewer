@@ -248,7 +248,11 @@ def build_grid(g: Gallery) -> None:
             debug_log(f"thumb {name}: {e!r}")
             dpg.add_text("[bad image]", parent=cell)
         label = name if len(name) <= 20 else name[:19] + "…"
-        dpg.add_text(label, parent=cell)
+        dpg.add_selectable(
+            label=label, default_value=(name == g.selected),
+            width=THUMB[0], parent=cell,
+            callback=lambda s, a, u=name: select(u),
+        )
     show_preview(g)
 
 
@@ -446,6 +450,7 @@ def copy_and_quit() -> None:
     items = G.visible()
     if G.selected not in items:
         G.selected = items[0] if items else None
+    debug_log(f"copy+quit selected={G.selected}")
     do_copy()
     dpg.stop_dearpygui()
 
