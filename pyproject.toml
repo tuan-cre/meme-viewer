@@ -8,6 +8,7 @@ version = "0.5.0"
 description = "Minimal web viewer for meme collections (Linux + Windows)"
 requires-python = ">=3.11"
 dependencies = [
+    "dearpygui>=2.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "Pillow>=10.0",
@@ -16,7 +17,8 @@ dependencies = [
 ]
 
 [project.scripts]
-meme-viewer = "meme_viewer.cli:main"
+meme-viewer = "meme_viewer.dpg_app:main"
+meme-web = "meme_viewer.cli:main"
 meme-serve = "meme_viewer.cli:serve_main"
 
 [tool.setuptools.packages.find]

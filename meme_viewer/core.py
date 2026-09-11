@@ -59,6 +59,22 @@ def unique_dest(name: str) -> Path:
     return dest
 
 
+def add_files(paths: list[Path]) -> int:
+    """Copy image files into the collection. Returns count added."""
+    import shutil
+
+    count = 0
+    for path in paths:
+        if not path.is_file() or path.suffix.lower() not in EXTS:
+            continue
+        try:
+            shutil.copy2(path, unique_dest(path.name))
+            count += 1
+        except OSError:
+            pass
+    return count
+
+
 def trash(name: str) -> bool:
     src = resolve(name)
     if src is None or not src.is_file():
