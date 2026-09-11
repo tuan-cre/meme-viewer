@@ -1,5 +1,5 @@
 """
-Meme Viewer — PyQt6 GUI for browsing and managing meme collections.
+Meme Viewer — local-first web viewer for meme collections.
 
-Reads memes from ``~/.local/share/memes/``.
+Reads memes from ``platformdirs.user_data_dir("memes")``.
 """
