@@ -34,8 +34,10 @@ uv run --frozen meme-viewer
 
 Launcher mode is the default (narrow, no preview): type to filter, click or
 `Enter` copies and quits, `Esc` quits, `Ctrl+E` or the Expand button shows
-the preview pane. The grid reflows its columns as you resize. Mode is
-remembered; `meme-viewer --full` forces full mode once.
+the preview pane. `Ctrl+V` pastes an image straight from the clipboard into
+the collection (screenshot → paste — no file dialog needed). The grid
+reflows its columns as you resize. Mode is remembered;
+`meme-viewer --full` forces full mode once.
 
 Browser fallback: `meme-web` (same collection via localhost).
 

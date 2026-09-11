@@ -148,6 +148,76 @@ def _copy_windows(path: Path) -> bool:
     return ok
 
 
+def paste_image_bytes() -> bytes | None:
+    """Grab an image from the OS clipboard. Returns raw bytes or None."""
+    system = platform.system()
+    try:
+        if system == "Windows":
+            return _paste_windows()
+        if system == "Linux":
+            return _paste_linux()
+    except Exception:
+        pass
+    return None
+
+
+def _paste_linux() -> bytes | None:
+    import subprocess as sp
+
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-paste"):
+        types = sp.run(
+            ["wl-paste", "--list-types"], capture_output=True, timeout=5
+        ).stdout.decode().split()
+        mime = "image/png" if "image/png" in types else (
+            "image/jpeg" if "image/jpeg" in types else None
+        )
+        if mime is None:
+            return None
+        p = sp.run(["wl-paste", "--type", mime], capture_output=True, timeout=10)
+        return p.stdout or None
+    if shutil.which("xclip"):
+        for mime in ("image/png", "image/jpeg"):
+            p = sp.run(
+                ["xclip", "-selection", "clipboard", "-t", mime, "-o"],
+                capture_output=True, timeout=10,
+            )
+            if p.returncode == 0 and p.stdout:
+                return p.stdout
+    return None
+
+
+def _paste_windows() -> bytes | None:
+    import ctypes
+    import io as _io
+
+    CF_DIB = 8
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    if not user32.OpenClipboard(None):
+        return None
+    try:
+        if not user32.IsClipboardFormatAvailable(CF_DIB):
+            return None
+        hmem = user32.GetClipboardData(CF_DIB)
+        if not hmem:
+            return None
+        size = kernel32.GlobalSize(hmem)
+        ptr = kernel32.GlobalLock(hmem)
+        try:
+            dib = ctypes.string_at(ptr, size)
+        finally:
+            kernel32.GlobalUnlock(hmem)
+    finally:
+        user32.CloseClipboard()
+    # DIB -> BMP -> PNG
+    import struct
+
+    bmp = b"BM" + struct.pack("<IHHI", 14 + 40 + len(dib), 0, 0, 14 + 40) + dib
+    img = Image.open(_io.BytesIO(bmp)).convert("RGB")
+    buf = _io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
 def open_file(path: Path) -> None:
     if platform.system() == "Windows":
         os.startfile(path)  # noqa: S606
@@ -334,6 +404,26 @@ def do_open() -> None:
     core.mark_used(G.selected)
 
 
+def do_paste() -> None:
+    import time as _time
+
+    try:
+        data = paste_image_bytes()
+    except Exception as e:
+        status(f"Paste failed: {e}")
+        return
+    if not data:
+        status("Clipboard has no image")
+        return
+    name = core.add_bytes(data, f"meme_{int(_time.time())}.png")
+    if name is None:
+        status("Paste failed: not an image")
+        return
+    status(f"Pasted {name}")
+    G.selected = name
+    G.refresh()
+
+
 def do_trash() -> None:
     if G.selected and core.trash(G.selected):
         status(f"Trashed {G.selected}")
@@ -450,6 +540,13 @@ def on_key_c() -> None:
         do_copy()
 
 
+def on_key_v() -> None:
+    if search_focused():
+        return  # let the search box keep normal text paste
+    if dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_LSuper):
+        do_paste()
+
+
 def on_key_enter() -> None:
     if search_focused():
         items = G.visible()
@@ -536,6 +633,7 @@ def build_ui() -> None:
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=on_key_delete)
         dpg.add_key_press_handler(dpg.mvKey_C, callback=on_key_c)
+        dpg.add_key_press_handler(dpg.mvKey_V, callback=on_key_v)
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=on_key_enter)
         dpg.add_key_press_handler(dpg.mvKey_Escape, callback=on_key_escape)
         dpg.add_key_press_handler(dpg.mvKey_E, callback=on_key_e)

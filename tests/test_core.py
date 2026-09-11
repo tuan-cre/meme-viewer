@@ -90,3 +90,16 @@ def test_recent_use_sorts_first(memes):
     assert core.list_memes()[0] == "c.png"
     core.mark_used("b.png")
     assert core.list_memes()[:2] == ["b.png", "c.png"]
+
+
+def test_add_bytes_validates(memes):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (1, 2, 3)).save(buf, "PNG")
+    assert core.add_bytes(buf.getvalue(), "clip.png") == "clip.png"
+    assert core.add_bytes(b"not-an-image", "clip.png") is None
+    assert core.add_bytes(buf.getvalue(), "evil.txt") is None
+    assert core.add_bytes(b"", "clip.png") is None

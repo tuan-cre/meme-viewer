@@ -103,6 +103,26 @@ def add_files(paths: list[Path]) -> int:
     return count
 
 
+def add_bytes(data: bytes, filename: str) -> str | None:
+    """Save raw image bytes into the collection. Returns filename or None."""
+    if not data:
+        return None
+    clean = Path(filename).name
+    if not clean or not any(clean.lower().endswith(e) for e in EXTS):
+        return None
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.verify()
+    except Exception:
+        return None
+    try:
+        dest = unique_dest(clean)
+        dest.write_bytes(data)
+        return dest.name
+    except OSError:
+        return None
+
+
 def trash(name: str) -> bool:
     src = resolve(name)
     if src is None or not src.is_file():
