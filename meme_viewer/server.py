@@ -1,380 +1,123 @@
+"""FastAPI server — the only backend. Serves JSON API + static web UI."""
 from __future__ import annotations
 
-import socket
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import mimetypes
 from pathlib import Path
 
-MEMES_DIR = Path.home() / ".local" / "share" / "memes"
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-GALLERY_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Meme Collection</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #050508;
-    color: #c7a0c8;
-    font-family: "Segoe UI", system-ui, sans-serif;
-    padding: 20px;
-  }
-  h1 { font-size: 1.5rem; margin-bottom: 20px; color: #b48ead; }
-  .gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 16px;
-  }
-  .item {
-    background: #08080d;
-    border-radius: 8px;
-    overflow: hidden;
-    transition: background 0.2s;
-  }
-  .item:hover { background: #0f0f18; }
-  .item a {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-decoration: none;
-    color: #c7a0c8;
-  }
-  .item img {
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
-    display: block;
-  }
-  .item span {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-    text-align: center;
-    word-break: break-all;
-    width: 100%;
-  }
-  .full {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 20px;
-  }
-  .full img {
-    max-width: 100%;
-    max-height: 100vh;
-    object-fit: contain;
-    border-radius: 8px;
-  }
-  .back {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    background: #08080d;
-    color: #b48ead;
-    padding: 8px 16px;
-    border-radius: 6px;
-    text-decoration: none;
-    font-size: 0.9rem;
-    z-index: 10;
-  }
-  .back:hover { background: #1a1423; }
-  @media (max-width: 480px) {
-    .gallery { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    body { padding: 10px; }
-  }
-</style>
-</head>
-<body>
-{{CONTENT}}
-</body>
-</html>"""
+from . import core
 
-INDEX_CONTENT = """<h1>Meme Collection</h1>
-<div class="gallery">
-{{ITEMS}}
-</div>"""
+STATIC_DIR = Path(__file__).parent / "static"
 
-ITEM_HTML = """<div class="item"><a href="/view/{name}"><img src="/images/{name}" loading="lazy"><span>{name}</span></a></div>"""
-
-VIEW_HTML = """<a class="back" href="/">&larr; Back</a>
-<div class="full"><img src="/images/{name}"></div>"""
+app = FastAPI(title="meme-viewer")
 
 
-EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
-THUMB_W = 120
-THUMB_H = 90
+class RenameReq(BaseModel):
+    old: str
+    new: str
 
 
-class MemeGalleryHandler(BaseHTTPRequestHandler):
-    """HTTP request handler that serves the meme gallery."""
-
-    # Suppress default HTTP server logs
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-    def _serve_thumb(self, path: Path) -> None:
-        from PIL import Image
-        import io
-
-        try:
-            img = Image.open(path)
-            # Create 120x90 transparent canvas (matching local _load_thumb)
-            canvas = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
-            img.thumbnail((THUMB_W, THUMB_H))
-            # Center image on canvas
-            x = (THUMB_W - img.width) // 2
-            y = (THUMB_H - img.height) // 2
-            if img.mode == "RGBA":
-                canvas.paste(img, (x, y), img)
-            else:
-                canvas.paste(img, (x, y))
-            buf = io.BytesIO()
-            canvas.save(buf, "PNG")
-            data = buf.getvalue()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "max-age=3600")
-            self.end_headers()
-            self.wfile.write(data)
-        except Exception:
-            self._serve_404()
-
-    def _serve_file(self, path: Path) -> None:
-        ext = path.suffix.lower()
-        content_type = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-            ".bmp": "image/bmp",
-        }.get(ext, "application/octet-stream")
-        try:
-            data = path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "max-age=3600")
-            self.end_headers()
-            self.wfile.write(data)
-        except OSError:
-            self._serve_404()
-
-    def _serve_404(self) -> None:
-        self.send_response(404)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b"Not Found")
-
-    def _gallery_page(self) -> str:
-        files = self._meme_files()
-        items = "\n".join(ITEM_HTML.format(name=p.name) for p in files)
-        body = INDEX_CONTENT.replace("{{ITEMS}}", items)
-        return GALLERY_HTML.replace("{{CONTENT}}", body)
-
-    def _view_page(self, name: str) -> str:
-        body = VIEW_HTML.format(name=name)
-        return GALLERY_HTML.replace("{{CONTENT}}", body)
-
-    @staticmethod
-    def _meme_files() -> list[Path]:
-        if not MEMES_DIR.exists():
-            return []
-        return sorted(
-            p for p in MEMES_DIR.iterdir()
-            if p.is_file() and p.suffix.lower() in EXTS
-        )
-
-    def _serve_json(self, data: object) -> None:
-        import json
-        payload = json.dumps(data).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def do_GET(self) -> None:
-        path = self.path.split("?")[0]  # Strip query params
-
-        if path == "/api/memes":
-            names = [p.name for p in self._meme_files()]
-            self._serve_json(names)
-
-        elif path == "/":
-            html = self._gallery_page()
-            data = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        elif path.startswith("/view/"):
-            name = path[6:]
-            html = self._view_page(name)
-            data = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        elif path.startswith("/images/"):
-            name = path[8:]
-            filepath = MEMES_DIR / name
-            if filepath.exists() and filepath.is_file():
-                self._serve_file(filepath)
-            else:
-                self._serve_404()
-
-        elif path.startswith("/thumb/"):
-            name = path[7:]
-            filepath = MEMES_DIR / name
-            if filepath.exists() and filepath.is_file():
-                self._serve_thumb(filepath)
-            else:
-                self._serve_404()
-
-        else:
-            self._serve_404()
-
-    def do_POST(self) -> None:
-        path = self.path.split("?")[0]
-
-        if path.startswith("/upload/"):
-            self._handle_upload(path)
-        else:
-            self._serve_404()
-
-    def _handle_upload(self, path: str) -> None:
-        import urllib.parse
-        import json
-
-        name = urllib.parse.unquote(path[8:])  # /upload/ -> 8 chars
-        filepath = MEMES_DIR / name
-
-        content_length = int(self.headers.get("Content-Length", 0))
-        data = self.rfile.read(content_length)
-
-        if not data:
-            self.send_response(400)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"ok": False, "error": "Empty data"}).encode())
-            return
-
-        # Avoid overwriting existing files
-        if filepath.exists():
-            stem = filepath.stem
-            suffix = filepath.suffix
-            i = 1
-            while filepath.exists():
-                filepath = MEMES_DIR / f"{stem}_{i}{suffix}"
-                i += 1
-
-        try:
-            filepath.write_bytes(data)
-            self._serve_json({"ok": True, "filename": filepath.name})
-        except OSError as e:
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode())
-
-    def do_OPTIONS(self) -> None:
-        """Handle CORS preflight — allow cross-origin uploads."""
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+class TrashReq(BaseModel):
+    name: str
 
 
-class MemeServer:
-    """Lightweight HTTP server serving the meme collection."""
-
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765) -> None:
-        self.host = host
-        self.port = port
-        self._server: HTTPServer | None = None
-        self._thread: threading.Thread | None = None
-        self._url: str = ""
-
-    @property
-    def url(self) -> str:
-        return self._url
-
-    @property
-    def is_running(self) -> bool:
-        return self._server is not None
-
-    def start(self) -> str:
-        """Start the server on a background thread. Returns the access URL."""
-        if self._server is not None:
-            return self._url
-
-        self._server = HTTPServer((self.host, self.port), MemeGalleryHandler)
-        actual_port = self._server.server_address[1]
-        self._url = f"http://{self._local_ip()}:{actual_port}"
-
-        self._thread = threading.Thread(
-            target=self._server.serve_forever,
-            daemon=True,
-        )
-        self._thread.start()
-        return self._url
-
-    def stop(self) -> None:
-        """Stop the server."""
-        if self._server is None:
-            return
-        self._thread = None
-        self._server.shutdown()
-        self._server = None
-        self._url = ""
-
-    @staticmethod
-    def _local_ip() -> str:
-        """Get the local network IP address."""
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("10.255.255.255", 1))
-            ip = s.getsockname()[0]
-        except Exception:
-            ip = "127.0.0.1"
-        finally:
-            s.close()
-        return ip
+def _check(name: str) -> Path:
+    p = core.resolve(name)
+    if p is None or not p.is_file():
+        raise HTTPException(404, "Not found")
+    return p
 
 
-def main() -> None:
-    """CLI entry point for `meme-serve`."""
-    import argparse
+@app.get("/api/memes", response_model=list[str])
+def api_memes(q: str = "") -> list[str]:
+    names = core.list_memes()
+    if q:
+        ql = q.lower()
+        names = [n for n in names if ql in n.lower()]
+    return names
 
-    parser = argparse.ArgumentParser(description="Serve meme collection over HTTP.")
-    parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
-    args = parser.parse_args()
 
-    server = MemeServer(host=args.host, port=args.port)
-    url = server.start()
-    print(f"Serving memes at {url}")
-    print(f"API: {url}/api/memes")
-    print("Press Ctrl+C to stop.")
+@app.get("/images/{name}")
+def get_image(name: str):
+    p = _check(name)
+    ctype, _ = mimetypes.guess_type(p.name)
+    return FileResponse(
+        p,
+        media_type=ctype or "application/octet-stream",
+        headers={"Cache-Control": "max-age=3600"},
+    )
 
+
+@app.get("/thumb/{name}")
+def get_thumb(name: str):
+    p = _check(name)
     try:
-        import signal
-        signal.signal(signal.SIGINT, lambda *_: server.stop())
-        signal.signal(signal.SIGTERM, lambda *_: server.stop())
-        # Keep main thread alive
-        import time
-        while server.is_running:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        server.stop()
-        print("\nServer stopped.")
+        data = core.make_thumb(p)
+    except Exception:
+        raise HTTPException(404, "Bad image")
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "max-age=3600"},
+    )
+
+
+def _save_bytes(filename: str, data: bytes) -> str:
+    if not data:
+        raise HTTPException(400, "Empty data")
+    clean = Path(filename).name
+    if not clean or not any(clean.lower().endswith(e) for e in core.EXTS):
+        raise HTTPException(400, "Not an image filename")
+    dest = core.unique_dest(clean)
+    dest.write_bytes(data)
+    return dest.name
+
+
+@app.post("/upload", response_model=list[str])
+async def upload(files: list[UploadFile] = File(...)) -> list[str]:
+    saved = []
+    for f in files:
+        data = await f.read()
+        saved.append(_save_bytes(f.filename or "upload", data))
+    return saved
+
+
+@app.post("/upload/{name}")
+async def upload_raw(name: str, request: Request):
+    """Legacy compat: raw octet-stream body (old Qt client)."""
+    from urllib.parse import unquote
+
+    data = await request.body()
+    saved = _save_bytes(unquote(name), data)
+    return {"ok": True, "filename": saved}
+
+
+@app.post("/api/rename")
+def api_rename(req: RenameReq):
+    result = core.rename(req.old, req.new)
+    if result is None:
+        raise HTTPException(400, "Rename failed (bad name or exists)")
+    return {"ok": True, "filename": result}
+
+
+@app.post("/api/trash")
+def api_trash(req: TrashReq):
+    if not core.trash(req.name):
+        raise HTTPException(404, "Not found")
+    return {"ok": True}
+
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    html = STATIC_DIR / "index.html"
+    if html.exists():
+        return html.read_text()
+    return "<h1>meme-viewer: static/ missing</h1>"

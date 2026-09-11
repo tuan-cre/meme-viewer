@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meme Collection</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <input id="search" type="search" placeholder="Search memes..." autocomplete="off">
+  <button id="add" title="Add images">+ Add</button>
+  <input id="file" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp" multiple hidden>
+</header>
+<main>
+  <aside><ul id="list"></ul></aside>
+  <section id="preview">
+    <div id="empty">Select a meme</div>
+    <img id="img" hidden alt="">
+    <div id="bar" hidden>
+      <span id="name"></span>
+      <button id="copy">Copy</button>
+      <button id="open">Open</button>
+      <button id="rename">Rename</button>
+      <button id="trash">Trash</button>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -4,17 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meme-viewer"
-version = "0.4.0"
-description = "PyQt6 GUI viewer for meme collections"
+version = "0.5.0"
+description = "Minimal web viewer for meme collections (Linux + Windows)"
 requires-python = ">=3.11"
 dependencies = [
-    "PyQt6>=6.5",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
     "Pillow>=10.0",
+    "platformdirs>=4.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
-meme-viewer = "meme_viewer.app:main"
-meme-serve = "meme_viewer.server:main"
+meme-viewer = "meme_viewer.cli:main"
+meme-serve = "meme_viewer.cli:serve_main"
 
 [tool.setuptools.packages.find]
 include = ["meme_viewer*"]
+
+[tool.setuptools.package-data]
+meme_viewer = ["static/*"]
